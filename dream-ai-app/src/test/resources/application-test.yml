@@ -1,0 +1,40 @@
+# 单测不连 Nacos / Redis / MySQL / Postgres。
+spring:
+  cloud:
+    nacos:
+      config:
+        enabled: false
+        import-check:
+          enabled: false
+      discovery:
+        enabled: false
+  sql:
+    init:
+      mode: never
+  ai:
+    model:
+      chat: none
+      embedding: none
+    dashscope:
+      api-key: test-not-used
+    mcp:
+      client:
+        enabled: false
+      server:
+        enabled: false
+    vectorstore:
+      pgvector:
+        enabled: false
+        initialize-schema: false
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisReactiveAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.redis.RedisHealthContributorAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration
+      - org.springframework.boot.autoconfigure.jdbc.JdbcTemplateAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.jdbc.DataSourceHealthContributorAutoConfiguration
+      - org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
+      - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration

@@ -1,0 +1,114 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: dream-ai
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:dream_ai_lab}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+  ai:
+    model:
+      chat: dashscope
+      embedding: dashscope
+    dashscope:
+      # 原生 HTTP host，SDK 会再拼 /api/v1/services/aigc/text-generation/generation
+      # 不要写成 compatible-mode/v1（那是 OpenAI 兼容口，会 404）
+      base-url: ${AI_DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com}
+      api-key: ${AI_DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          # qwen3.8-* 等走 multimodal-generation；须 multi-model: true（适配器每次请求都会带上）
+          model: ${AI_DASHSCOPE_MODEL:qwen3.8-27b}
+          multi-model: ${AI_DASHSCOPE_MULTI_MODEL:true}
+      embedding:
+        options:
+          model: ${AI_DASHSCOPE_EMBEDDING_MODEL:text-embedding-v4}
+          dimensions: ${AI_DASHSCOPE_EMBEDDING_DIM:1024}
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: ${AI_DASHSCOPE_EMBEDDING_DIM:1024}
+    # Client 由 McpConfig 手工对接智谱；关掉 Starter 自动建连，避免无 Key 时启动失败
+    mcp:
+      client:
+        enabled: false
+        toolcallback:
+          enabled: false
+      server:
+        enabled: false
+  cloud:
+    nacos:
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:dream-ai}
+        group: ${NACOS_GROUP:dream}
+        register-enabled: true
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
+      config:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        namespace: ${NACOS_NAMESPACE:dream-ai}
+        group: ${NACOS_CONFIG_GROUP:dream}
+        file-extension: yml
+        refresh-enabled: true
+        fail-fast: false
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
+
+dream:
+  # 第 6 周 MCP Client：对接智谱 SSE（外部 Server），不自环本仓
+  mcp:
+    client:
+      enabled: ${DREAM_MCP_CLIENT_ENABLED:false}
+      # 也可用环境变量 ZHIPU_API_KEY；勿把真实 Key 写进仓库
+      zhipu-api-key: ${ZHIPU_API_KEY:}
+  vector:
+    datasource:
+      url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:5432}/${POSTGRES_DB:postgres}
+      username: ${POSTGRES_USER:postgres}
+      password: ${POSTGRES_PASSWORD:}
+      driver-class-name: org.postgresql.Driver
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+  health:
+    redis:
+      enabled: true
+
+---
+# 非 test 才拉 Nacos 配置；单测 profile 不 import，避免没中间件时卡住。
+spring:
+  config:
+    activate:
+      on-profile: "!test"
+    import:
+      - optional:nacos:dream-ai.yml?group=${NACOS_CONFIG_GROUP:dream}&refresh=true
+      - optional:file:./application-local.yml

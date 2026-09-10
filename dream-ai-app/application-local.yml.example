@@ -1,0 +1,25 @@
+# 本地私密覆盖（勿提交）。复制本文件为 application-local.yml 后填写。
+# spring.config.import 已 optional 引入 ./application-local.yml
+
+spring:
+  datasource:
+    password: change-me
+  ai:
+    dashscope:
+      api-key: change-me
+  cloud:
+    nacos:
+      password: change-me
+      discovery:
+        password: change-me
+      config:
+        password: change-me
+
+dream:
+  vector:
+    datasource:
+      password: change-me
+  mcp:
+    client:
+      enabled: false
+      zhipu-api-key:

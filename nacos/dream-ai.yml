@@ -1,0 +1,53 @@
+# 发布到 Nacos：
+#   Namespace ID = dream-ai（NACOS_NAMESPACE）
+#   Data ID = dream-ai.yml
+#   Group = dream（或 NACOS_CONFIG_GROUP）
+# 本文件只是模板，不进运行时 classpath。
+
+server:
+  port: 8090
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:dream_ai_lab}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  ai:
+    model:
+      chat: dashscope
+      embedding: dashscope
+    dashscope:
+      base-url: ${AI_DASHSCOPE_BASE_URL:https://dashscope.aliyuncs.com}
+      api-key: ${AI_DASHSCOPE_API_KEY:}
+      chat:
+        options:
+          model: ${AI_DASHSCOPE_MODEL:qwen3.8-27b}
+          multi-model: ${AI_DASHSCOPE_MULTI_MODEL:true}
+      embedding:
+        options:
+          model: ${AI_DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}
+          dimensions: ${AI_DASHSCOPE_EMBEDDING_DIM:1024}
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: ${AI_DASHSCOPE_EMBEDDING_DIM:1024}
+
+dream:
+  vector:
+    datasource:
+      url: jdbc:postgresql://${POSTGRES_HOST:127.0.0.1}:${POSTGRES_PORT:5432}/${POSTGRES_DB:postgres}
+      username: ${POSTGRES_USER:postgres}
+      password: ${POSTGRES_PASSWORD:postgres}
+      driver-class-name: org.postgresql.Driver

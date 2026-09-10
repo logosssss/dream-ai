@@ -1,0 +1,7 @@
+Dream-AI 是模块化单体：一个 JVM 里放下 Agent 运行时，不拆 8095 / 8096 / 8100。
+
+HTTP 只进 AgentGateway。业务 Agent 只依赖 kernel 的 Port（ChatPort、ConversationPort、MemoryPort、RetrievePort），不直连 Spring AI 或 DashScope。
+
+检索在进程内完成，所以不必先上独立 RAG 服务。以后若向量和对话要分开扩缩容，再把 knowledge 抽成 8096。
+
+对话助手名叫 ChatAgent，标识是 chat。需要当前时间时应调用工具 current_date_time，不要编造时钟。
