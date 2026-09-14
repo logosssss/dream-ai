@@ -4,7 +4,10 @@ import com.zhu.ai.kernel.llm.ChatPort;
 import com.zhu.ai.kernel.observe.ObservePort;
 import com.zhu.ai.kernel.tool.ToolPort;
 import com.zhu.ai.llm.DashScopeChatAdapter;
+import com.zhu.ai.llm.DatetimeOffsetTool;
+import com.zhu.ai.llm.LocalMethodTools;
 import com.zhu.ai.llm.ToolCallbackPort;
+import com.zhu.ai.llm.ToolCallbackSupport;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -13,7 +16,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.function.FunctionToolCallback;
+import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -23,8 +28,12 @@ import org.springframework.context.annotation.Configuration;
 /**
  * LLM 组合根：仅在 {@code spring.ai.model.chat=dashscope} 时装配。
  * <p>
- * 把 Spring AI 的 {@code ChatModel} / {@code ToolCallback} 收成 kernel 的 {@link ChatPort}、
- * {@link ToolPort}；单测可自行提供这两个 Bean，并设 {@code chat: none}。
+ * 工具贡献四条路径最终都收成 {@link ToolCallback}，再进 {@link ToolPort} / 模型 options：
+ * <ul>
+ *   <li>{@link FunctionToolCallback} — 本类 clock / datetime_offset</li>
+ *   <li>{@code MethodToolCallback} — {@link LocalMethodTools} + {@link MethodToolCallbackProvider}</li>
+ *   <li>{@code SyncMcpToolCallback} / {@code AsyncMcpToolCallback} — {@code McpConfig} 按 mode 二选一</li>
+ * </ul>
  */
 @Configuration
 @ConditionalOnProperty(name = "spring.ai.model.chat", havingValue = "dashscope")
@@ -38,10 +47,23 @@ public class ChatConfig {
     private static final DateTimeFormatter CLOCK_FMT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z");
 
+    @Bean
+    LocalMethodTools localMethodTools() {
+        return new LocalMethodTools();
+    }
+
     /**
-     * 当前进程内业务工具：上海时区的日期时间。
-     * MCP 贡献的工具（最多 1 个）由 {@code McpConfig} 另注册 {@code ToolCallback}，同样进 {@link #toolPort}。
-     * 只负责 schema + 执行；何时调用由模型决定，循环和限步在 {@code ToolCallingLoop}。
+     * {@code MethodToolCallback} 贡献口：扫 {@link LocalMethodTools} 上的 {@code @Tool}。
+     * 与直接 {@link ToolCallback} Bean 一并在 {@link #toolPort} 合并。
+     */
+    @Bean
+    ToolCallbackProvider localMethodToolCallbackProvider(LocalMethodTools localMethodTools) {
+        return MethodToolCallbackProvider.builder().toolObjects(localMethodTools).build();
+    }
+
+    /**
+     * 无参进程内工具：{@link FunctionToolCallback}。
+     * MCP 由 {@code McpConfig} 另注册；何时调用由模型决定，循环和限步在 {@code ToolCallingLoop}。
      */
     @Bean
     ToolCallback clockToolCallback() {
@@ -52,16 +74,30 @@ public class ChatConfig {
     }
 
     /**
-     * 把容器里所有 {@link ToolCallback} 收成 {@link ToolPort}。
-     * 再加工具时声明新的 {@code ToolCallback} Bean 即可，不必改适配器。
+     * 带参进程内工具：{@link FunctionToolCallback} + inputType。
+     */
+    @Bean
+    ToolCallback datetimeOffsetToolCallback() {
+        return FunctionToolCallback.builder(
+                        DatetimeOffsetTool.TOOL_NAME, DatetimeOffsetTool::execute)
+                .description(
+                        "按指定时区对基准时间做加减（天/小时/分钟），返回换算后的日期时间与中文星期。"
+                                + "用户问「三天后是几号」「往后推 N 小时」「某时区某时刻加减」时必须调用，不要心算。"
+                                + "unit 仅支持 DAYS、HOURS、MINUTES；baseDateTime 可空（表示该时区当前时刻）；"
+                                + "zoneId 可空（默认 Asia/Shanghai）。")
+                .inputType(DatetimeOffsetTool.Request.class)
+                .build();
+    }
+
+    /**
+     * 合并直接 {@link ToolCallback} Bean 与所有 {@link ToolCallbackProvider}（含 Method 路径）。
      */
     @Bean
     @ConditionalOnMissingBean(ToolPort.class)
-    ToolPort toolPort(List<ToolCallback> callbacks) {
-        log.info(
-                "ToolPort registered tools={}",
-                callbacks.stream().map(cb -> cb.getToolDefinition().name()).toList());
-        return new ToolCallbackPort(callbacks);
+    ToolPort toolPort(List<ToolCallback> callbacks, List<ToolCallbackProvider> providers) {
+        List<ToolCallback> merged = ToolCallbackSupport.merge(callbacks, providers);
+        log.info("ToolPort registered tools={}", ToolCallbackSupport.summarize(merged));
+        return new ToolCallbackPort(merged);
     }
 
     /**
@@ -73,9 +109,11 @@ public class ChatConfig {
     ChatPort chatPort(
             ChatModel chatModel,
             List<ToolCallback> callbacks,
+            List<ToolCallbackProvider> providers,
             ToolPort tools,
             ObservePort observe,
             @Value("${spring.ai.dashscope.chat.options.multi-model:#{null}}") Boolean multiModel) {
-        return new DashScopeChatAdapter(chatModel, callbacks, tools, observe, multiModel);
+        List<ToolCallback> merged = ToolCallbackSupport.merge(callbacks, providers);
+        return new DashScopeChatAdapter(chatModel, merged, tools, observe, multiModel);
     }
 }

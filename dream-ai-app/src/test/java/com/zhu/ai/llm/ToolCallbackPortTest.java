@@ -30,4 +30,30 @@ class ToolCallbackPortTest {
                 IllegalStateException.class, () -> new ToolCallbackPort(List.of(ping, ping)));
         assertTrue(ex.getMessage().contains("duplicate tool name 'ping'"));
     }
+
+    @Test
+    void executesParameterizedDatetimeOffsetTool() {
+        ToolCallbackPort port = new ToolCallbackPort(List.of(
+                FunctionToolCallback.builder(DatetimeOffsetTool.TOOL_NAME, DatetimeOffsetTool::execute)
+                        .description("offset")
+                        .inputType(DatetimeOffsetTool.Request.class)
+                        .build()));
+        String out = port.execute(
+                "datetime_offset",
+                "{\"baseDateTime\":\"2026-09-10 10:00:00\",\"zoneId\":\"Asia/Shanghai\",\"amount\":3,\"unit\":\"DAYS\"}");
+        assertTrue(out.contains("2026-09-13 10:00:00"));
+        assertTrue(out.contains("星期日"));
+    }
+
+    @Test
+    void parameterizedToolBadArgsBecomeToolError() {
+        ToolCallbackPort port = new ToolCallbackPort(List.of(
+                FunctionToolCallback.builder(DatetimeOffsetTool.TOOL_NAME, DatetimeOffsetTool::execute)
+                        .description("offset")
+                        .inputType(DatetimeOffsetTool.Request.class)
+                        .build()));
+        String out = port.execute("datetime_offset", "{\"amount\":1,\"unit\":\"WEEKS\"}");
+        assertTrue(out.startsWith("tool error:"));
+        assertTrue(out.contains("unit"));
+    }
 }

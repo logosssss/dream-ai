@@ -1,25 +1,77 @@
-# 本地私密覆盖（勿提交）。复制本文件为 application-local.yml 后填写。
-# spring.config.import 已 optional 引入 ./application-local.yml
+# =============================================================================
+# Dream-AI 本地环境（直接改本文件即可，已 gitignore，勿提交）
+# 路径：dream-ai-app/application-local.yml
+# 启动时由 application.yml：optional:file:./application-local.yml 引入
+# 请在 dream-ai-app 目录下启动，或保证工作目录能解析到本文件：
+#   cd dream-ai-app && mvn spring-boot:run
+#   或在仓库根：mvn -pl dream-ai-app -am spring-boot:run
+#     （若 CWD 为仓库根，请同时在根目录放一份同名文件，或复制本文件到仓库根）
+# =============================================================================
+
+server:
+  port: 8090
 
 spring:
   datasource:
-    password: change-me
+    # MySQL：会话 turn 等
+    url: jdbc:mysql://127.0.0.1:3306/dream_ai_lab?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password:                    # ← 必填：MySQL 密码
+
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
   ai:
+    model:
+      chat: dashscope
+      embedding: dashscope
     dashscope:
-      api-key: change-me
+      # 原生 HTTP；不要写成 compatible-mode/v1
+      base-url: https://dashscope.aliyuncs.com
+      api-key:                     # ← 必填：通义 DashScope API Key
+      chat:
+        options:
+          # qwen3.8-* 等需 multi-model: true
+          model: qwen3.8-27b
+          multi-model: true
+      embedding:
+        options:
+          model: text-embedding-v4
+          dimensions: 1024
+
   cloud:
     nacos:
-      password: change-me
+      username: nacos
+      password: nacos              # ← 按本机 Nacos 改
       discovery:
-        password: change-me
+        server-addr: 127.0.0.1:8848
+        namespace: dream-ai
+        group: dream
+        register-enabled: true
+        username: nacos
+        password: nacos
       config:
-        password: change-me
+        server-addr: 127.0.0.1:8848
+        namespace: dream-ai
+        group: dream
+        file-extension: yml
+        refresh-enabled: true
+        fail-fast: false
+        username: nacos
+        password: nacos
 
 dream:
-  vector:
-    datasource:
-      password: change-me
   mcp:
     client:
+      # true 时下面 zhipu-api-key 必填；false 则只用不带 MCP 的本地工具
       enabled: false
-      zhipu-api-key:
+      zhipu-api-key:               # ← 可选：智谱 Key（开 MCP 时必填）
+  vector:
+    datasource:
+      # PostgreSQL + pgvector
+      url: jdbc:postgresql://127.0.0.1:5432/postgres
+      username: postgres
+      password:                    # ← 必填：Postgres 密码
+      driver-class-name: org.postgresql.Driver

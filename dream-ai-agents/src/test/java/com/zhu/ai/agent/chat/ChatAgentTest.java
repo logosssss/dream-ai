@@ -25,6 +25,8 @@ class ChatAgentTest {
             assertEquals("你好", request.prompt());
             assertTrue(request.system() != null && request.system().contains("对话助手"));
             assertTrue(request.system().contains("web_search"));
+            assertTrue(request.system().contains("datetime_offset"));
+            assertTrue(request.system().contains("text_stats"));
             return "收到";
         });
         var result = agent.handle(new AgentInvokeRequest("chat", "s1", "你好"));

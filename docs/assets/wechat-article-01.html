@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>从 Dream-SaaS 到 Dream-AI：模块化单体 Agent 运行时开源</title>
+</head>
+<body>
+<!-- 定位：Dream-SaaS 全项目深度教程 · 外篇；公众号「Java宋转AI」 -->
+<!-- 复制外层 section 到 135 / 秀米；微信后台建议用编辑器导入 HTML -->
+
+<section style="max-width:677px;margin:0 auto;padding:0;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;color:#1e293b;font-size:16px;line-height:1.8;background:linear-gradient(180deg,#e8f4f1 0%,#f1f5f9 120px,#ffffff 280px);">
+
+  <!-- 顶栏 -->
+  <div style="margin:0;padding:28px 20px 24px;background:linear-gradient(135deg,#0f766e 0%,#0f172a 72%);color:#fff;border-radius:0;">
+    <p style="margin:0 0 10px;font-size:12px;letter-spacing:2px;color:#99f6e4;text-transform:uppercase;">DREAM-SAAS 深度教程 · 外篇</p>
+    <h1 style="margin:0 0 12px;font-size:22px;line-height:1.45;font-weight:700;color:#ffffff;">从 Dream-SaaS 到 Dream-AI：模块化单体 Agent 运行时开源</h1>
+    <p style="margin:0;font-size:13px;color:#cbd5e1;">宋哥转AI · 公众号「Java宋转AI」 · Apache-2.0</p>
+  </div>
+
+  <div style="padding:8px 16px 32px;">
+
+  <!-- 导语卡 -->
+  <div style="margin:20px 0 24px;padding:18px 16px;background:#ffffff;border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.06);border:1px solid #e2e8f0;">
+    <p style="margin:0 0 12px;color:#334155;">Dream-SaaS 系列已按现网代码拆过 Graph、RAG、MCP、观测等多条线，重点是<strong style="color:#0f766e;">为什么这样切</strong>。</p>
+    <p style="margin:0 0 12px;color:#334155;">现仓模块多、进程多，跟一条完整请求成本偏高。需要一个<strong style="color:#0f766e;">更小、能 clone 就跑</strong>、边界仍与现网对齐的对照仓。</p>
+    <p style="margin:0;color:#334155;"><strong>Dream-AI</strong> 即该对照仓：把 Agent 运行时主路径压进<strong>模块化单体</strong>——单进程、Port 分层、一次 <code style="background:#ecfdf5;color:#0f766e;padding:2px 6px;border-radius:4px;font-size:14px;">invoke</code> 覆盖网关、工具循环、会话 / Memory、RAG、观测，以及可选 MCP Client。</p>
+  </div>
+
+  <!-- 链接条 -->
+  <div style="margin:0 0 28px;padding:16px 16px;background:linear-gradient(90deg,#ecfdf5,#f0f9ff);border-radius:12px;border:1px solid #99f6e4;">
+    <p style="margin:0 0 6px;font-size:13px;color:#0f766e;font-weight:600;">开源仓库</p>
+    <p style="margin:0 0 10px;"><a href="https://github.com/logosssss/dream-ai" style="color:#0f172a;word-break:break-all;text-decoration:none;font-weight:700;font-size:15px;">github.com/logosssss/dream-ai</a></p>
+    <p style="margin:0;font-size:13px;color:#64748b;">JDK 21 · Spring Boot 3.5 · Spring AI 1.1 · 产品站 dream-saas.com</p>
+  </div>
+
+  <!-- 01 -->
+  <div style="margin:0 0 28px;">
+    <div style="display:flex;align-items:center;margin:0 0 14px;">
+      <span style="display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#0f766e;color:#fff;border-radius:10px;font-size:14px;font-weight:700;">01</span>
+      <h2 style="margin:0 0 0 12px;font-size:18px;font-weight:700;color:#0f172a;">和 Dream-SaaS 系列的关系</h2>
+    </div>
+    <p style="margin:0 0 14px;color:#475569;">定位是系列的<strong>可运行附录</strong>，不是另一套产品叙事。</p>
+
+    <table style="width:100%;border-collapse:collapse;margin:0 0 14px;font-size:14px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.04);">
+      <tr style="background:#0f172a;color:#fff;">
+        <th style="padding:12px 14px;text-align:left;font-weight:600;width:38%;">对照项</th>
+        <th style="padding:12px 14px;text-align:left;font-weight:600;">说明</th>
+      </tr>
+      <tr style="background:#f8fafc;">
+        <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#0f766e;font-weight:600;">Dream-SaaS 文章</td>
+        <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#334155;">多进程 / 多模块现网：平台化演进、审查、MCP 平台层、Graph</td>
+      </tr>
+      <tr style="background:#ffffff;">
+        <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#0f766e;font-weight:600;">Dream-AI 仓库</td>
+        <td style="padding:12px 14px;border-bottom:1px solid #e2e8f0;color:#334155;">同一套平台层思维，砍到一条主路径，便于跟代码与对照讲解</td>
+      </tr>
+      <tr style="background:#f8fafc;">
+        <td style="padding:12px 14px;color:#0f766e;font-weight:600;">进程策略</td>
+        <td style="padding:12px 14px;color:#334155;">现网 8090 / 8095 / 8096 分进程服务规模；沙盘先单进程跑通，Port 预留拆分切点</td>
+      </tr>
+    </table>
+
+    <div style="padding:12px 14px;background:#fff7ed;border-left:4px solid #ea580c;border-radius:0 8px 8px 0;font-size:14px;color:#9a3412;">
+      原则：先把「请求如何进入运行时」跑通，再谈服务拆分。切点已立在 Port 上，而不是事后硬拆类。
+    </div>
+  </div>
+
+  <!-- 02 -->
+  <div style="margin:0 0 28px;">
+    <div style="display:flex;align-items:center;margin:0 0 14px;">
+      <span style="display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#0f766e;color:#fff;border-radius:10px;font-size:14px;font-weight:700;">02</span>
+      <h2 style="margin:0 0 0 12px;font-size:18px;font-weight:700;color:#0f172a;">模块怎么摆</h2>
+    </div>
+    <p style="margin:0 0 14px;color:#475569;">Maven 只保留四块，不为每个 Agent 再开空模块，也不复制现网 MCP 七层空架子。</p>
+
+    <div style="margin:0 0 8px;padding:14px 14px;background:#ffffff;border-radius:10px;border:1px solid #e2e8f0;">
+      <p style="margin:0 0 4px;font-weight:700;color:#0f766e;font-size:15px;">dream-ai-kernel</p>
+      <p style="margin:0;font-size:14px;color:#64748b;">Port 与运行时契约：Gateway、Chat、Tool、Memory、Conversation、Retrieve、Observe</p>
+    </div>
+    <div style="margin:0 0 8px;padding:14px 14px;background:#ffffff;border-radius:10px;border:1px solid #e2e8f0;">
+      <p style="margin:0 0 4px;font-weight:700;color:#0369a1;font-size:15px;">dream-ai-knowledge</p>
+      <p style="margin:0;font-size:14px;color:#64748b;">检索相关能力（进程内索引等），不绑厂商 SDK</p>
+    </div>
+    <div style="margin:0 0 8px;padding:14px 14px;background:#ffffff;border-radius:10px;border:1px solid #e2e8f0;">
+      <p style="margin:0 0 4px;font-weight:700;color:#7c3aed;font-size:15px;">dream-ai-agents</p>
+      <p style="margin:0;font-size:14px;color:#64748b;">业务 Agent；当前仅 <code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">chat</code>，只依赖 kernel 契约</p>
+    </div>
+    <div style="margin:0 0 14px;padding:14px 14px;background:#ffffff;border-radius:10px;border:1px solid #e2e8f0;">
+      <p style="margin:0 0 4px;font-weight:700;color:#b45309;font-size:15px;">dream-ai-app</p>
+      <p style="margin:0;font-size:14px;color:#64748b;">装配层：HTTP、MyBatis / Redis / Vector、DashScope、MCP Client、Gateway 实现</p>
+    </div>
+  </div>
+
+  <!-- 03 -->
+  <div style="margin:0 0 28px;">
+    <div style="display:flex;align-items:center;margin:0 0 14px;">
+      <span style="display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#0f766e;color:#fff;border-radius:10px;font-size:14px;font-weight:700;">03</span>
+      <h2 style="margin:0 0 0 12px;font-size:18px;font-weight:700;color:#0f172a;">主路径上有什么</h2>
+    </div>
+    <p style="margin:0 0 14px;color:#475569;">业务入口只有一个 Agent：<code style="background:#ecfdf5;color:#0f766e;padding:2px 6px;border-radius:4px;font-size:14px;">chat</code>。能力点与系列文章反复强调的契约对齐。</p>
+
+    <!-- 能力网格 -->
+    <div style="margin:0 0 6px;padding:12px 14px;background:linear-gradient(90deg,#ccfbf1,#ffffff);border-radius:10px;border:1px solid #99f6e4;">
+      <p style="margin:0;font-size:14px;color:#134e4a;"><strong style="color:#0f766e;">网关</strong>　HTTP 只进 <code style="background:#fff;padding:1px 5px;border-radius:3px;">AgentGateway</code>，统一装上下文再分发</p>
+    </div>
+    <div style="margin:6px 0;padding:12px 14px;background:linear-gradient(90deg,#e0f2fe,#ffffff);border-radius:10px;border:1px solid #7dd3fc;">
+      <p style="margin:0;font-size:14px;color:#0c4a6e;"><strong style="color:#0369a1;">工具循环</strong>　显式限步，避免「一调模型就失控」</p>
+    </div>
+    <div style="margin:6px 0;padding:12px 14px;background:linear-gradient(90deg,#fef3c7,#ffffff);border-radius:10px;border:1px solid #fcd34d;">
+      <p style="margin:0;font-size:14px;color:#78350f;"><strong style="color:#b45309;">会话 vs Memory</strong>　短历史落库；长期记忆走独立 Port</p>
+    </div>
+    <div style="margin:6px 0;padding:12px 14px;background:linear-gradient(90deg,#ede9fe,#ffffff);border-radius:10px;border:1px solid #c4b5fd;">
+      <p style="margin:0;font-size:14px;color:#4c1d95;"><strong style="color:#6d28d9;">RAG</strong>　进程内检索结果写入 prompt，不由 Agent 直接碰存储</p>
+    </div>
+    <div style="margin:6px 0;padding:12px 14px;background:linear-gradient(90deg,#fce7f3,#ffffff);border-radius:10px;border:1px solid #f9a8d4;">
+      <p style="margin:0;font-size:14px;color:#831843;"><strong style="color:#be185d;">观测</strong>　traceId、耗时、modelCalls / toolCalls；另有 <code style="background:#fff;padding:1px 5px;border-radius:3px;">GET /api/observe</code></p>
+    </div>
+    <div style="margin:6px 0 16px;padding:12px 14px;background:linear-gradient(90deg,#ecfccb,#ffffff);border-radius:10px;border:1px solid #bef264;">
+      <p style="margin:0;font-size:14px;color:#365314;"><strong style="color:#4d7c0f;">MCP Client</strong>　可选挂智谱 <code style="background:#fff;padding:1px 5px;border-radius:3px;">web_search</code>；对照现网 Client→外部 Server，本仓不做自环 Server</p>
+    </div>
+
+    <p style="margin:0 0 8px;font-size:13px;color:#94a3b8;letter-spacing:1px;">REQUEST FLOW</p>
+    <div style="margin:0 0 8px;padding:16px 16px;background:#0f172a;color:#e2e8f0;border-radius:12px;font-family:Consolas,Monaco,'Courier New',monospace;font-size:12.5px;line-height:1.7;overflow-x:auto;">
+      <p style="margin:0;color:#5eead4;">POST /api/agent/invoke</p>
+      <p style="margin:0;color:#94a3b8;">　│</p>
+      <p style="margin:0;color:#f8fafc;">　▼ Gateway</p>
+      <p style="margin:0;color:#94a3b8;">　│　装 history / memory / retrieve</p>
+      <p style="margin:0;color:#f8fafc;">　▼ ChatAgent</p>
+      <p style="margin:0;color:#94a3b8;">　│　ChatPort + ToolCallingLoop</p>
+      <p style="margin:0;color:#f8fafc;">　▼ Response</p>
+      <p style="margin:0;color:#94a3b8;">　　　output + 观测摘要</p>
+    </div>
+  </div>
+
+  <!-- 04 -->
+  <div style="margin:0 0 28px;">
+    <div style="display:flex;align-items:center;margin:0 0 14px;">
+      <span style="display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#0f766e;color:#fff;border-radius:10px;font-size:14px;font-weight:700;">04</span>
+      <h2 style="margin:0 0 0 12px;font-size:18px;font-weight:700;color:#0f172a;">几条硬边界（与现网同款）</h2>
+    </div>
+    <p style="margin:0 0 14px;color:#475569;">下列约束来自现网踩坑沉淀，不是装饰性分层。</p>
+
+    <div style="margin:0 0 10px;padding:14px 14px;background:#fff;border-radius:10px;box-shadow:0 4px 14px rgba(15,118,110,0.08);border-top:3px solid #0f766e;">
+      <p style="margin:0 0 6px;font-weight:700;color:#0f172a;">① Agent 不碰存储</p>
+      <p style="margin:0;font-size:14px;color:#64748b;">不注入 Mapper / Conversation / Memory。业务只消费网关装好的上下文，避免 Agent 与持久化缠死。</p>
+    </div>
+    <div style="margin:0 0 10px;padding:14px 14px;background:#fff;border-radius:10px;box-shadow:0 4px 14px rgba(3,105,161,0.08);border-top:3px solid #0369a1;">
+      <p style="margin:0 0 6px;font-weight:700;color:#0f172a;">② 厂商与 DAO 只在 app</p>
+      <p style="margin:0;font-size:14px;color:#64748b;"><code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">kernel</code> 只留 Port；DashScope、MyBatis、Redis、向量库装配全部落在 <code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">app</code>。</p>
+    </div>
+    <div style="margin:0 0 14px;padding:14px 14px;background:#fff;border-radius:10px;box-shadow:0 4px 14px rgba(109,40,217,0.08);border-top:3px solid #6d28d9;">
+      <p style="margin:0 0 6px;font-weight:700;color:#0f172a;">③ 工具执行口统一</p>
+      <p style="margin:0;font-size:14px;color:#64748b;">本地 <code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">ToolCallback</code> 与 MCP 工具最终都进同一 <code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;">ToolPort</code>——贡献路径可以不同，执行与观测口径一致。与 MCP 系列中「平台层 vs 业务工具」同一套说法。</p>
+    </div>
+
+    <div style="padding:12px 14px;background:#f0fdf4;border-radius:10px;font-size:14px;color:#166534;border:1px solid #bbf7d0;">
+      沙盘目标是<strong>能讲、能跑</strong>。名义上的「全家桶模块」若没有主路径流量，一律先不搬。
+    </div>
+  </div>
+
+  <!-- 05 -->
+  <div style="margin:0 0 28px;">
+    <div style="display:flex;align-items:center;margin:0 0 14px;">
+      <span style="display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#0f766e;color:#fff;border-radius:10px;font-size:14px;font-weight:700;">05</span>
+      <h2 style="margin:0 0 0 12px;font-size:18px;font-weight:700;color:#0f172a;">一次 invoke，Gateway 装什么</h2>
+    </div>
+    <p style="margin:0 0 14px;color:#475569;">对照现网「平台组装上下文、业务不查库」：沙盘里 <code style="background:#ecfdf5;color:#0f766e;padding:2px 6px;border-radius:4px;font-size:14px;">DefaultAgentGateway</code> 在分发前完成三件事。</p>
+
+    <div style="margin:0 0 8px;padding:12px 14px;background:#0f172a;border-radius:10px;">
+      <p style="margin:0;font-family:Consolas,Monaco,monospace;font-size:13px;color:#5eead4;">history = conversation.history(sessionId)</p>
+      <p style="margin:4px 0 0;font-family:Consolas,Monaco,monospace;font-size:13px;color:#7dd3fc;">memoryNotes = memory.recall(sessionId)</p>
+      <p style="margin:4px 0 0;font-family:Consolas,Monaco,monospace;font-size:13px;color:#c4b5fd;">hits = retrieve.retrieve(input, topK)</p>
+    </div>
+    <p style="margin:12px 0 0;font-size:14px;color:#64748b;">三者打进 Agent 入参后，再记一轮 Memory、写会话 turn、落观测。Agent 侧只看见字符串与 turn 列表，看不见 Mapper。</p>
+  </div>
+
+  <!-- 06 -->
+  <div style="margin:0 0 28px;">
+    <div style="display:flex;align-items:center;margin:0 0 14px;">
+      <span style="display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#0f766e;color:#fff;border-radius:10px;font-size:14px;font-weight:700;">06</span>
+      <h2 style="margin:0 0 0 12px;font-size:18px;font-weight:700;color:#0f172a;">和已发文章怎么对照</h2>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;margin:0 0 14px;font-size:14px;background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;">
+      <tr style="background:#ecfdf5;">
+        <th style="padding:10px 12px;text-align:left;color:#0f766e;width:36%;">系列主题</th>
+        <th style="padding:10px 12px;text-align:left;color:#0f766e;">沙盘里盯哪里</th>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #e2e8f0;color:#334155;">MCP / 工具</td>
+        <td style="padding:10px 12px;border-top:1px solid #e2e8f0;color:#64748b;"><code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;">ToolCallingLoop</code> + 可选智谱 Client</td>
+      </tr>
+      <tr style="background:#f8fafc;">
+        <td style="padding:10px 12px;border-top:1px solid #e2e8f0;color:#334155;">观测</td>
+        <td style="padding:10px 12px;border-top:1px solid #e2e8f0;color:#64748b;"><code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;">/api/observe</code> 与响应中的 traceId / toolCalls（学契约，不抄 Admin UI）</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 12px;border-top:1px solid #e2e8f0;color:#334155;">RAG / 记忆</td>
+        <td style="padding:10px 12px;border-top:1px solid #e2e8f0;color:#64748b;">Gateway 如何塞 retrieve、memory，而不是 Agent 自行查库</td>
+      </tr>
+      <tr style="background:#f8fafc;">
+        <td style="padding:10px 12px;border-top:1px solid #e2e8f0;color:#334155;">平台层思维</td>
+        <td style="padding:10px 12px;border-top:1px solid #e2e8f0;color:#64748b;">kernel Port + app 适配器；模块少，边界不省</td>
+      </tr>
+    </table>
+
+    <div style="padding:14px 16px;background:linear-gradient(135deg,#0f766e,#134e4a);border-radius:12px;color:#ecfdf5;">
+      <p style="margin:0;font-size:15px;line-height:1.7;">系列文章负责讲透<strong style="color:#fff;">现网为何复杂</strong>；Dream-AI 负责提供一条<strong style="color:#fff;">可改的主路径</strong>。两边对照，比只啃 60+ 模块现仓更省力。</p>
+    </div>
+  </div>
+
+  <!-- 07 -->
+  <div style="margin:0 0 28px;">
+    <div style="display:flex;align-items:center;margin:0 0 14px;">
+      <span style="display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#0f766e;color:#fff;border-radius:10px;font-size:14px;font-weight:700;">07</span>
+      <h2 style="margin:0 0 0 12px;font-size:18px;font-weight:700;color:#0f172a;">本地怎么起</h2>
+    </div>
+    <p style="margin:0 0 12px;color:#475569;font-size:15px;">密钥与中间件走本地覆盖，不进仓库明文。</p>
+    <div style="margin:0 0 12px;padding:14px 14px;background:#0f172a;border-radius:10px;font-family:Consolas,Monaco,monospace;font-size:12.5px;line-height:1.65;color:#e2e8f0;">
+      <p style="margin:0;color:#94a3b8;"># 参考仓库根目录</p>
+      <p style="margin:0;color:#5eead4;">cp .env.example .env</p>
+      <p style="margin:0;color:#5eead4;">cp dream-ai-app/application-local.yml.example \</p>
+      <p style="margin:0;color:#5eead4;">　 dream-ai-app/src/main/resources/application-local.yml</p>
+      <p style="margin:8px 0 0;color:#94a3b8;"># 填 DashScope / 可选 ZHIPU_API_KEY 等</p>
+      <p style="margin:0;color:#7dd3fc;">mvn -pl dream-ai-app -am spring-boot:run</p>
+    </div>
+    <p style="margin:0;font-size:14px;color:#64748b;">冒烟：<code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">POST /api/agent/invoke</code>，body 带 <code style="background:#f1f5f9;padding:2px 6px;border-radius:4px;">agentId=chat</code> 与输入文本；响应中可读 output 与观测字段。</p>
+  </div>
+
+  <!-- 08 -->
+  <div style="margin:0 0 8px;">
+    <div style="display:flex;align-items:center;margin:0 0 14px;">
+      <span style="display:inline-block;width:36px;height:36px;line-height:36px;text-align:center;background:#0f766e;color:#fff;border-radius:10px;font-size:14px;font-weight:700;">08</span>
+      <h2 style="margin:0 0 0 12px;font-size:18px;font-weight:700;color:#0f172a;">后续</h2>
+    </div>
+    <p style="margin:0 0 14px;color:#475569;">Dream-AI 将持续维护与扩展（更多 Agent、工具、检索与观测），边界仍守模块化单体。Dream-SaaS 深度教程同步续写。</p>
+
+    <div style="margin:0 0 20px;padding:16px;background:#fff;border-radius:12px;border:1px dashed #94a3b8;">
+      <p style="margin:0 0 8px;font-size:13px;color:#0f766e;font-weight:600;">下篇预告</p>
+      <p style="margin:0;font-size:15px;color:#334155;">按沙盘代码拆一次 <code style="background:#ecfdf5;color:#0f766e;padding:2px 6px;border-radius:4px;">invoke</code>：Gateway 装入的上下文明细，与现网网关组装逐项对照。</p>
+    </div>
+
+    <div style="padding:18px 16px;background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:12px;text-align:center;">
+      <p style="margin:0 0 10px;"><a href="https://www.dream-saas.com/" style="color:#5eead4;text-decoration:none;font-size:14px;">产品演示 · dream-saas.com</a></p>
+      <p style="margin:0 0 16px;"><a href="https://github.com/logosssss/dream-ai" style="color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;">开源底盘 · github.com/logosssss/dream-ai</a></p>
+      <p style="margin:0;font-size:12px;color:#64748b;letter-spacing:1px;">宋哥转AI · Java宋转AI</p>
+      <p style="margin:6px 0 0;font-size:11px;color:#475569;">架构实战 · 从代码讲决策 · 非产品手册</p>
+    </div>
+  </div>
+
+  </div>
+</section>
+
+</body>
+</html>

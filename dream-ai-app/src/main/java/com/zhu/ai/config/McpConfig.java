@@ -14,6 +14,7 @@ import org.springframework.util.StringUtils;
  * MCP Client 接线：本仓对接智谱（外部 Server），不自环本进程。
  * <p>
  * 对齐现网 8090 Client → {@code zhipu-web-search}；最多挂 1 个 Tool 进 {@link ChatConfig} 的工具列表。
+ * {@code dream.mcp.client.mode=sync|async} 选择 {@code SyncMcpToolCallback} 或 {@code AsyncMcpToolCallback}。
  * 须同时 {@code dream.mcp.client.enabled=true} 且配置 {@code ZHIPU_API_KEY} / {@code dream.mcp.zhipu-api-key}。
  */
 @Configuration
@@ -24,16 +25,20 @@ public class McpConfig {
 
     @Bean(destroyMethod = "close")
     ZhipuMcpClientBridge zhipuMcpClientBridge(
-            @Value("${dream.mcp.zhipu-api-key:${ZHIPU_API_KEY:}}") String apiKey) {
+            @Value("${dream.mcp.zhipu-api-key:${ZHIPU_API_KEY:}}") String apiKey,
+            @Value("${dream.mcp.client.mode:sync}") String mode) {
         if (!StringUtils.hasText(apiKey)) {
             throw new IllegalStateException(
                     "dream.mcp.client.enabled=true but ZHIPU_API_KEY / dream.mcp.zhipu-api-key is blank");
         }
-        ZhipuMcpClientBridge bridge = ZhipuMcpClientBridge.connect(apiKey);
+        ZhipuMcpClientBridge bridge =
+                ZhipuMcpClientBridge.connect(apiKey, ZhipuMcpClientBridge.Mode.from(mode));
         log.info(
-                "MCP Client connected connection={} tool={}",
+                "MCP Client connected connection={} mode={} tool={} callback={}",
                 ZhipuMcpClientBridge.CONNECTION_ID,
-                bridge.toolCallback().getToolDefinition().name());
+                bridge.mode(),
+                bridge.toolCallback().getToolDefinition().name(),
+                bridge.toolCallback().getClass().getSimpleName());
         return bridge;
     }
 
