@@ -75,7 +75,7 @@ dream:
   mcp:
     client:
       enabled: ${DREAM_MCP_CLIENT_ENABLED:false}
-      # sync → SyncMcpToolCallback；async → AsyncMcpToolCallback（call 内仍 block）
+      # sync → SyncMcpToolCallback；async → AsyncMcpToolCallback（call 内仍 block）；list_tools 全部挂载
       mode: ${DREAM_MCP_CLIENT_MODE:sync}
       # 也可用环境变量 ZHIPU_API_KEY；勿把真实 Key 写进仓库
       zhipu-api-key: ${ZHIPU_API_KEY:}

@@ -117,7 +117,8 @@ class DreamAiApplicationTest {
         ChatPort chatPort() {
             return request -> {
                 boolean remembered = request.system() != null && request.system().contains("长期记忆");
-                boolean rag = request.system() != null && request.system().contains("参考资料");
+                boolean rag = request.system() != null
+                        && request.system().contains("参考资料（知识问题优先依据这些片段");
                 return "stub:"
                         + request.history().size()
                         + ":"

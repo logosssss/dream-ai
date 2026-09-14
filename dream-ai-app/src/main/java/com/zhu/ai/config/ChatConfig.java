@@ -28,11 +28,12 @@ import org.springframework.context.annotation.Configuration;
 /**
  * LLM 组合根：仅在 {@code spring.ai.model.chat=dashscope} 时装配。
  * <p>
- * 工具贡献四条路径最终都收成 {@link ToolCallback}，再进 {@link ToolPort} / 模型 options：
+ * 工具贡献三条路径最终都收成 {@link ToolCallback}，再进 {@link ToolPort} / 模型 options：
  * <ul>
  *   <li>{@link FunctionToolCallback} — 本类 clock / datetime_offset</li>
  *   <li>{@code MethodToolCallback} — {@link LocalMethodTools} + {@link MethodToolCallbackProvider}</li>
- *   <li>{@code SyncMcpToolCallback} / {@code AsyncMcpToolCallback} — {@code McpConfig} 按 mode 二选一</li>
+ *   <li>{@code SyncMcpToolCallback} / {@code AsyncMcpToolCallback} — {@code McpConfig} 按 mode 二选一，
+ *       {@code list_tools} 全部经 {@link ToolCallbackProvider} 合并</li>
  * </ul>
  */
 @Configuration
@@ -63,7 +64,7 @@ public class ChatConfig {
 
     /**
      * 无参进程内工具：{@link FunctionToolCallback}。
-     * MCP 由 {@code McpConfig} 另注册；何时调用由模型决定，循环和限步在 {@code ToolCallingLoop}。
+     * MCP 由 {@code McpConfig} 以 {@link ToolCallbackProvider} 注册全部远端工具；何时调用由模型决定，循环和限步在 {@code ToolCallingLoop}。
      */
     @Bean
     ToolCallback clockToolCallback() {

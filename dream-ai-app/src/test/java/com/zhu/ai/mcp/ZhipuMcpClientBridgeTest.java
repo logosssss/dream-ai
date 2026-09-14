@@ -2,31 +2,35 @@ package com.zhu.ai.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.modelcontextprotocol.spec.McpSchema;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.springframework.ai.tool.ToolCallback;
 
 class ZhipuMcpClientBridgeTest {
 
     @Test
-    void pickOne_prefersWebSearch() {
+    void requireTools_keepsAllInOrder() {
         McpSchema.Tool other = tool("other");
         McpSchema.Tool search = tool(ZhipuMcpClientBridge.PREFERRED_TOOL);
-        assertEquals(search, ZhipuMcpClientBridge.pickOne(List.of(other, search)));
+        assertEquals(List.of(other, search), ZhipuMcpClientBridge.requireTools(List.of(other, search)));
     }
 
     @Test
-    void pickOne_fallsBackToFirst() {
-        McpSchema.Tool first = tool("alpha");
-        assertEquals(first, ZhipuMcpClientBridge.pickOne(List.of(first, tool("beta"))));
+    void requireTools_empty_throws() {
+        assertThrows(IllegalStateException.class, () -> ZhipuMcpClientBridge.requireTools(List.of()));
+        assertThrows(IllegalStateException.class, () -> ZhipuMcpClientBridge.requireTools(null));
     }
 
     @Test
-    void pickOne_empty_throws() {
-        assertThrows(IllegalStateException.class, () -> ZhipuMcpClientBridge.pickOne(List.of()));
+    void requireTools_duplicateName_throws() {
+        assertThrows(
+                IllegalStateException.class,
+                () -> ZhipuMcpClientBridge.requireTools(List.of(tool("dup"), tool("dup"))));
     }
 
     @Test
@@ -40,25 +44,29 @@ class ZhipuMcpClientBridgeTest {
     /** 有 Key 时真连智谱；无 Key 跳过。 */
     @Test
     @EnabledIfEnvironmentVariable(named = "ZHIPU_API_KEY", matches = ".+")
-    void connect_listsPreferredTool() {
+    void connect_listsAllTools() {
         try (ZhipuMcpClientBridge bridge = ZhipuMcpClientBridge.connect(System.getenv("ZHIPU_API_KEY"))) {
-            assertEquals(ZhipuMcpClientBridge.PREFERRED_TOOL, bridge.toolCallback().getToolDefinition().name());
             assertEquals(ZhipuMcpClientBridge.Mode.SYNC, bridge.mode());
-            assertEquals(
-                    "SyncMcpToolCallback", bridge.toolCallback().getClass().getSimpleName());
+            assertContainsPreferred(bridge.toolCallbacks(), "SyncMcpToolCallback");
+            assertEquals(bridge.toolCallbacks().size(), bridge.getToolCallbacks().length);
         }
     }
 
     @Test
     @EnabledIfEnvironmentVariable(named = "ZHIPU_API_KEY", matches = ".+")
-    void connectAsync_listsPreferredTool() {
+    void connectAsync_listsAllTools() {
         try (ZhipuMcpClientBridge bridge = ZhipuMcpClientBridge.connect(
                 System.getenv("ZHIPU_API_KEY"), ZhipuMcpClientBridge.Mode.ASYNC)) {
-            assertEquals(ZhipuMcpClientBridge.PREFERRED_TOOL, bridge.toolCallback().getToolDefinition().name());
             assertEquals(ZhipuMcpClientBridge.Mode.ASYNC, bridge.mode());
-            assertEquals(
-                    "AsyncMcpToolCallback", bridge.toolCallback().getClass().getSimpleName());
+            assertContainsPreferred(bridge.toolCallbacks(), "AsyncMcpToolCallback");
         }
+    }
+
+    private static void assertContainsPreferred(List<ToolCallback> callbacks, String callbackType) {
+        assertTrue(callbacks.size() >= 1);
+        List<String> names = callbacks.stream().map(cb -> cb.getToolDefinition().name()).toList();
+        assertTrue(names.contains(ZhipuMcpClientBridge.PREFERRED_TOOL), () -> "tools=" + names);
+        assertTrue(callbacks.stream().allMatch(cb -> callbackType.equals(cb.getClass().getSimpleName())));
     }
 
     private static McpSchema.Tool tool(String name) {
