@@ -5,11 +5,12 @@ import java.util.Objects;
 import org.springframework.ai.tool.ToolCallback;
 
 /**
- * 按 {@link ConfigurableToolPolicy#advertise} 过滤广告给模型的工具列表。
+ * 按 {@link ConfigurableToolPolicy#visibleToModel} 筛出声明给模型的工具 schema。
+ * 白名单外的工具不进入 ChatModel options，模型看不见也就不会去调。
  */
-public final class ToolCallbackAdvertiser {
+public final class ModelVisibleTools {
 
-    private ToolCallbackAdvertiser() {}
+    private ModelVisibleTools() {}
 
     public static List<ToolCallback> filter(List<ToolCallback> callbacks, ConfigurableToolPolicy policy) {
         Objects.requireNonNull(policy, "policy");
@@ -17,7 +18,7 @@ public final class ToolCallbackAdvertiser {
             return List.of();
         }
         return callbacks.stream()
-                .filter(cb -> policy.advertise(cb.getToolDefinition().name()))
+                .filter(cb -> policy.visibleToModel(cb.getToolDefinition().name()))
                 .toList();
     }
 }

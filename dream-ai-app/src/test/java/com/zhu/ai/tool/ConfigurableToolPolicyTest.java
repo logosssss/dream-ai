@@ -22,7 +22,7 @@ class ConfigurableToolPolicyTest {
         var policy = new ConfigurableToolPolicy(List.of(), List.of("web_search"), ConfigurableToolPolicy.HitlMode.OFF);
         assertEquals(ToolPolicyDecision.ALLOW, policy.decide("web_search"));
         assertEquals(ToolPolicyDecision.ALLOW, policy.decide("current_date_time"));
-        assertTrue(policy.advertise("web_search"));
+        assertTrue(policy.visibleToModel("web_search"));
     }
 
     @Test
@@ -31,8 +31,8 @@ class ConfigurableToolPolicyTest {
                 List.of("current_date_time"), List.of(), ConfigurableToolPolicy.HitlMode.OFF);
         assertEquals(ToolPolicyDecision.ALLOW, policy.decide("current_date_time"));
         assertEquals(ToolPolicyDecision.DENY, policy.decide("web_search"));
-        assertFalse(policy.advertise("web_search"));
-        assertTrue(policy.advertise("current_date_time"));
+        assertFalse(policy.visibleToModel("web_search"));
+        assertTrue(policy.visibleToModel("current_date_time"));
     }
 
     @Test

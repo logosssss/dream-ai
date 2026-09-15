@@ -10,7 +10,7 @@ import com.zhu.ai.llm.ToolCallbackPort;
 import com.zhu.ai.llm.ToolCallbackSupport;
 import com.zhu.ai.tool.ConfigurableToolPolicy;
 import com.zhu.ai.tool.GuardedToolPort;
-import com.zhu.ai.tool.ToolCallbackAdvertiser;
+import com.zhu.ai.tool.ModelVisibleTools;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -45,7 +45,7 @@ public class ChatConfig {
 
     private static final Logger log = LoggerFactory.getLogger(ChatConfig.class);
 
-    /** 广告给模型的工具名，须与 {@link #clockToolCallback()} 里 builder 的 name 一致。 */
+    /** 声明给模型的工具名，须与 {@link #clockToolCallback()} 里 builder 的 name 一致。 */
     static final String CLOCK_TOOL = "current_date_time";
 
     private static final DateTimeFormatter CLOCK_FMT =
@@ -108,7 +108,7 @@ public class ChatConfig {
     }
 
     /**
-     * 对外只暴露 {@link ChatPort}：广告给模型的工具经白名单过滤；执行走受策略保护的 {@link ToolPort}。
+     * 对外只暴露 {@link ChatPort}：声明给模型的工具经白名单过滤；执行走受策略保护的 {@link ToolPort}。
      */
     @Bean
     @ConditionalOnMissingBean(ChatPort.class)
@@ -122,8 +122,8 @@ public class ChatConfig {
             @Value("${spring.ai.dashscope.chat.options.multi-model:#{null}}") Boolean multiModel,
             @Value("${dream.stream.timeout-ms:120000}") long streamTimeoutMs) {
         List<ToolCallback> merged = ToolCallbackSupport.merge(callbacks, providers);
-        List<ToolCallback> advertised = ToolCallbackAdvertiser.filter(merged, policy);
-        log.info("ChatPort advertised tools={}", ToolCallbackSupport.summarize(advertised));
-        return new DashScopeChatAdapter(chatModel, advertised, tools, observe, multiModel, streamTimeoutMs);
+        List<ToolCallback> visible = ModelVisibleTools.filter(merged, policy);
+        log.info("ChatPort visible tools={}", ToolCallbackSupport.summarize(visible));
+        return new DashScopeChatAdapter(chatModel, visible, tools, observe, multiModel, streamTimeoutMs);
     }
 }

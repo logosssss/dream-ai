@@ -75,7 +75,7 @@ dream:
     # SSE / ChatModel.stream 阻塞上限；超时走 503 TransientAiException
     timeout-ms: ${DREAM_STREAM_TIMEOUT_MS:120000}
   tools:
-    # 非空则仅名单内工具可广告给模型并执行；空 = 全部注册工具可用
+    # 非空则仅名单内工具可声明给模型并执行；空 = 全部注册工具可用
     allowlist: []
     # 需人工审批的工具；hitl-mode=enforce 时须带请求头 X-Dream-Tool-Approvals
     require-approval: []

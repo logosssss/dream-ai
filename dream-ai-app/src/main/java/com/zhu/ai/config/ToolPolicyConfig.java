@@ -44,7 +44,7 @@ public class ToolPolicyConfig {
     /** 绑定 {@code dream.tools.*}。 */
     public static final class ToolPolicyProperties {
 
-        /** 非空则仅名单内工具可广告 / 执行。 */
+        /** 非空则仅名单内工具可声明给模型并执行。 */
         private List<String> allowlist = List.of();
 
         /** 需人工审批的工具名；配合 hitl-mode=enforce。 */
