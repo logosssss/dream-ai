@@ -1,0 +1,11 @@
+{
+  "id": "graph-route-chat",
+  "agentId": "graph",
+  "input": "现在几点了",
+  "expect": {
+    "success": true,
+    "agentId": "graph",
+    "outputContains": ["[route=chat]"],
+    "outputNotContains": ["[route=knowledge]"]
+  }
+}

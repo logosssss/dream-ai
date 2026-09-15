@@ -1,0 +1,11 @@
+{
+  "id": "graph-route-knowledge",
+  "agentId": "graph",
+  "input": "请从知识库检索：什么是 AgentGateway",
+  "expect": {
+    "success": true,
+    "agentId": "graph",
+    "outputContains": ["[route=knowledge]"],
+    "outputNotContains": ["[route=chat]"]
+  }
+}

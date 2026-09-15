@@ -38,3 +38,11 @@ spring:
       - org.springframework.boot.actuate.autoconfigure.jdbc.DataSourceHealthContributorAutoConfiguration
       - org.springframework.ai.vectorstore.pgvector.autoconfigure.PgVectorStoreAutoConfiguration
       - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
+
+# 单测不连智谱 MCP；与 spring.ai.mcp.client.enabled 是两套开关
+dream:
+  mcp:
+    client:
+      enabled: false
+  tools:
+    hitl-mode: auto

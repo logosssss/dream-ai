@@ -1,8 +1,11 @@
 package com.zhu.ai;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zhu.ai.kernel.llm.ChatPort;
@@ -90,6 +93,21 @@ class DreamAiApplicationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].sessionId").value("obs-http"))
                 .andExpect(jsonPath("$[0].success").value(true));
+    }
+
+    @Test
+    void invokeStreamEmitsDeltaAndDone() throws Exception {
+        var mvcResult = mockMvc.perform(post("/api/agent/invoke/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("{\"agentId\":\"chat\",\"sessionId\":\"sse-hello\",\"input\":\"hello\"}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(mvcResult))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:delta")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("stub:0:n:n:hello")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:done")));
     }
 
     @Test

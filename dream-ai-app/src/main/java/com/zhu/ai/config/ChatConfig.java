@@ -8,6 +8,9 @@ import com.zhu.ai.llm.DatetimeOffsetTool;
 import com.zhu.ai.llm.LocalMethodTools;
 import com.zhu.ai.llm.ToolCallbackPort;
 import com.zhu.ai.llm.ToolCallbackSupport;
+import com.zhu.ai.tool.ConfigurableToolPolicy;
+import com.zhu.ai.tool.GuardedToolPort;
+import com.zhu.ai.tool.ToolCallbackAdvertiser;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -91,19 +94,21 @@ public class ChatConfig {
     }
 
     /**
-     * 合并直接 {@link ToolCallback} Bean 与所有 {@link ToolCallbackProvider}（含 Method 路径）。
+     * 合并全部 ToolCallback，再包 {@link GuardedToolPort}（白名单 / HITL）。
      */
     @Bean
     @ConditionalOnMissingBean(ToolPort.class)
-    ToolPort toolPort(List<ToolCallback> callbacks, List<ToolCallbackProvider> providers) {
+    ToolPort toolPort(
+            List<ToolCallback> callbacks,
+            List<ToolCallbackProvider> providers,
+            ConfigurableToolPolicy policy) {
         List<ToolCallback> merged = ToolCallbackSupport.merge(callbacks, providers);
         log.info("ToolPort registered tools={}", ToolCallbackSupport.summarize(merged));
-        return new ToolCallbackPort(merged);
+        return new GuardedToolPort(new ToolCallbackPort(merged), policy);
     }
 
     /**
-     * 对外只暴露 {@link ChatPort}：内部用 DashScope {@code ChatModel} 做单步调用，
-     * 再交给工具循环限步。Agent 不要直接注入 {@code ChatModel}。
+     * 对外只暴露 {@link ChatPort}：广告给模型的工具经白名单过滤；执行走受策略保护的 {@link ToolPort}。
      */
     @Bean
     @ConditionalOnMissingBean(ChatPort.class)
@@ -113,8 +118,12 @@ public class ChatConfig {
             List<ToolCallbackProvider> providers,
             ToolPort tools,
             ObservePort observe,
-            @Value("${spring.ai.dashscope.chat.options.multi-model:#{null}}") Boolean multiModel) {
+            ConfigurableToolPolicy policy,
+            @Value("${spring.ai.dashscope.chat.options.multi-model:#{null}}") Boolean multiModel,
+            @Value("${dream.stream.timeout-ms:120000}") long streamTimeoutMs) {
         List<ToolCallback> merged = ToolCallbackSupport.merge(callbacks, providers);
-        return new DashScopeChatAdapter(chatModel, merged, tools, observe, multiModel);
+        List<ToolCallback> advertised = ToolCallbackAdvertiser.filter(merged, policy);
+        log.info("ChatPort advertised tools={}", ToolCallbackSupport.summarize(advertised));
+        return new DashScopeChatAdapter(chatModel, advertised, tools, observe, multiModel, streamTimeoutMs);
     }
 }

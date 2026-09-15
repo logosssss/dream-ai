@@ -1,5 +1,7 @@
 package com.zhu.ai.kernel.runtime;
 
+import com.zhu.ai.kernel.llm.TokenSink;
+
 /**
  * Agent 运行时门面（Facade）。
  * <p>
@@ -12,4 +14,9 @@ public interface AgentGateway {
      * 同步调用一个 Agent。未知 {@code agentId} 由实现抛业务异常。
      */
     AgentInvokeResult invoke(AgentInvokeRequest request);
+
+    /**
+     * 流式调用：装上下文后走 Handler {@code handleStream}，全文完成后写会话 / Memory。
+     */
+    AgentInvokeResult invokeStream(AgentInvokeRequest request, TokenSink sink);
 }

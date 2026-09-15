@@ -6,7 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.zhu.ai.kernel.conversation.ConversationRole;
 import com.zhu.ai.kernel.conversation.ConversationTurn;
+import com.zhu.ai.kernel.llm.ChatPort;
+import com.zhu.ai.kernel.llm.ChatRequest;
+import com.zhu.ai.kernel.llm.TokenSink;
 import com.zhu.ai.kernel.runtime.AgentInvokeRequest;
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +36,27 @@ class ChatAgentTest {
         var result = agent.handle(new AgentInvokeRequest("chat", "s1", "你好"));
         assertEquals("chat", result.agentId());
         assertEquals("收到", result.output());
+    }
+
+    @Test
+    void handleStreamUsesChatPortStream() {
+        ChatAgent agent = new ChatAgent(new ChatPort() {
+            @Override
+            public String complete(ChatRequest request) {
+                throw new AssertionError("stream path must not call complete");
+            }
+
+            @Override
+            public String stream(ChatRequest request, TokenSink sink) {
+                sink.onDelta("你");
+                sink.onDelta("好");
+                return "你好";
+            }
+        });
+        List<String> deltas = new ArrayList<>();
+        var result = agent.handleStream(new AgentInvokeRequest("chat", "s1", "hi"), deltas::add);
+        assertEquals(List.of("你", "好"), deltas);
+        assertEquals("你好", result.output());
     }
 
     @Test

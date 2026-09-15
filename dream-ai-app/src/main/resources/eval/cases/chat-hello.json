@@ -1,0 +1,10 @@
+{
+  "id": "chat-hello",
+  "agentId": "chat",
+  "input": "你好",
+  "expect": {
+    "success": true,
+    "agentId": "chat",
+    "outputContains": ["你好"]
+  }
+}

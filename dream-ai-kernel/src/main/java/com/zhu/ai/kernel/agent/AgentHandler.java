@@ -1,5 +1,6 @@
 package com.zhu.ai.kernel.agent;
 
+import com.zhu.ai.kernel.llm.TokenSink;
 import com.zhu.ai.kernel.runtime.AgentInvokeRequest;
 import com.zhu.ai.kernel.runtime.AgentInvokeResult;
 
@@ -19,4 +20,16 @@ public interface AgentHandler {
     String name();
 
     AgentInvokeResult handle(AgentInvokeRequest request);
+
+    /**
+     * 流式处理。默认先 {@link #handle} 再整段推给 sink（Graph 等未接 stream 的 Agent）。
+     * {@code chat} 覆盖为走 {@code ChatPort#stream}。
+     */
+    default AgentInvokeResult handleStream(AgentInvokeRequest request, TokenSink sink) {
+        AgentInvokeResult result = handle(request);
+        if (sink != null && result.output() != null && !result.output().isEmpty() && !sink.cancelled()) {
+            sink.onDelta(result.output());
+        }
+        return result;
+    }
 }

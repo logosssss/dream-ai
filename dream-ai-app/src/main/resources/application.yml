@@ -71,10 +71,20 @@ spring:
         password: ${NACOS_PASSWORD:nacos}
 
 dream:
+  stream:
+    # SSE / ChatModel.stream 阻塞上限；超时走 503 TransientAiException
+    timeout-ms: ${DREAM_STREAM_TIMEOUT_MS:120000}
+  tools:
+    # 非空则仅名单内工具可广告给模型并执行；空 = 全部注册工具可用
+    allowlist: []
+    # 需人工审批的工具；hitl-mode=enforce 时须带请求头 X-Dream-Tool-Approvals
+    require-approval: []
+    # off=忽略审批名单；enforce=未批拒执；auto=审批名单自动放行（演示/测试）
+    hitl-mode: ${DREAM_TOOLS_HITL_MODE:enforce}
   # 第 6 周 MCP Client：对接智谱 SSE（外部 Server），不自环本仓
   mcp:
     client:
-      enabled: ${DREAM_MCP_CLIENT_ENABLED:false}
+      enabled: ${DREAM_MCP_CLIENT_ENABLED:true}
       # sync → SyncMcpToolCallback；async → AsyncMcpToolCallback（call 内仍 block）；list_tools 全部挂载
       mode: ${DREAM_MCP_CLIENT_MODE:sync}
       # 也可用环境变量 ZHIPU_API_KEY；勿把真实 Key 写进仓库

@@ -126,6 +126,41 @@ class DefaultAgentGatewayTest {
         assertEquals(result.observe().traceId(), observe.recent(1).get(0).traceId());
     }
 
+    @Test
+    void invokeStreamStoresConversationAndPushesDeltas() {
+        java.util.List<String> deltas = new java.util.ArrayList<>();
+        InMemoryConversationPort conversation = new InMemoryConversationPort();
+        DefaultAgentGateway gateway = new DefaultAgentGateway(
+                new InMemoryAgentRegistry(List.of(new RecordingHandler("chat", (id, req) ->
+                        new AgentInvokeResult(id, "hello")))),
+                conversation,
+                new InMemoryMemoryPort(),
+                new InMemoryKeywordIndex(),
+                new InMemoryObservePort());
+        AgentInvokeResult result =
+                gateway.invokeStream(new AgentInvokeRequest("chat", "sse-1", "hi"), deltas::add);
+        assertEquals("hello", result.output());
+        assertEquals(List.of("hello"), deltas);
+        assertEquals(2, conversation.history("sse-1").size());
+    }
+
+    @Test
+    void invokeStreamCancelDoesNotAppend() {
+        InMemoryConversationPort conversation = new InMemoryConversationPort();
+        DefaultAgentGateway gateway = new DefaultAgentGateway(
+                new InMemoryAgentRegistry(List.of(new RecordingHandler("chat", (id, req) -> {
+                    throw new com.zhu.ai.kernel.llm.StreamCancelledException();
+                }))),
+                conversation,
+                new InMemoryMemoryPort(),
+                new InMemoryKeywordIndex(),
+                new InMemoryObservePort());
+        assertThrows(
+                com.zhu.ai.kernel.llm.StreamCancelledException.class,
+                () -> gateway.invokeStream(new AgentInvokeRequest("chat", "sse-2", "hi"), delta -> {}));
+        assertTrue(conversation.history("sse-2").isEmpty());
+    }
+
     private static DefaultAgentGateway gateway(RecordingHandler.Fn fn) {
         return new DefaultAgentGateway(
                 new InMemoryAgentRegistry(List.of(new RecordingHandler("chat", fn))),

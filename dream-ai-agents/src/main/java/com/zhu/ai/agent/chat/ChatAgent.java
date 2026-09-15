@@ -3,6 +3,7 @@ package com.zhu.ai.agent.chat;
 import com.zhu.ai.kernel.agent.AgentHandler;
 import com.zhu.ai.kernel.llm.ChatPort;
 import com.zhu.ai.kernel.llm.ChatRequest;
+import com.zhu.ai.kernel.llm.TokenSink;
 import com.zhu.ai.kernel.runtime.AgentInvokeRequest;
 import com.zhu.ai.kernel.runtime.AgentInvokeResult;
 import org.springframework.stereotype.Component;
@@ -11,7 +12,7 @@ import org.springframework.stereotype.Component;
  * 对话助手（当前唯一业务 Agent）。
  * <p>
  * 写 system prompt 和入参校验；把 Gateway 填好的 history / 长期记忆 / 检索片段交给 {@link ChatPort}，
- * 不注入会话、记忆或知识存储。
+ * 不注入会话、记忆或知识存储。同步走 {@link #handle}；SSE 走 {@link #handleStream}。
  */
 @Component
 public class ChatAgent implements AgentHandler {
@@ -45,16 +46,24 @@ public class ChatAgent implements AgentHandler {
 
     @Override
     public AgentInvokeResult handle(AgentInvokeRequest request) {
+        return new AgentInvokeResult(ID, chatPort.complete(chatRequest(request)));
+    }
+
+    @Override
+    public AgentInvokeResult handleStream(AgentInvokeRequest request, TokenSink sink) {
+        return new AgentInvokeResult(ID, chatPort.stream(chatRequest(request), sink));
+    }
+
+    private ChatRequest chatRequest(AgentInvokeRequest request) {
         String input = request.input();
         if (input == null || input.isBlank()) {
             throw new IllegalArgumentException("input required");
         }
-        String output = chatPort.complete(
-                new ChatRequest(null, input, systemPrompt(request.memoryNotes(), request.retrievedContext()), request.history()));
-        return new AgentInvokeResult(ID, output);
+        return new ChatRequest(
+                null, input, systemPrompt(request.memoryNotes(), request.retrievedContext()), request.history());
     }
 
-    static String systemPrompt(String memoryNotes, String retrievedContext) {
+    public static String systemPrompt(String memoryNotes, String retrievedContext) {
         StringBuilder system = new StringBuilder(SYSTEM);
         if (memoryNotes != null && !memoryNotes.isBlank()) {
             system.append("\n长期记忆：\n").append(memoryNotes);
