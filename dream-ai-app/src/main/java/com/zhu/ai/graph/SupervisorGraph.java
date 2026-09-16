@@ -19,6 +19,9 @@ import com.zhu.ai.kernel.graph.GraphRunRequest;
 import com.zhu.ai.kernel.graph.GraphRunResult;
 import com.zhu.ai.kernel.llm.ChatPort;
 import com.zhu.ai.kernel.llm.ChatRequest;
+import com.zhu.ai.kernel.llm.ModelRouter;
+import com.zhu.ai.kernel.llm.TokenSink;
+import com.zhu.ai.kernel.observe.ObservePort;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +32,7 @@ import org.slf4j.LoggerFactory;
 /**
  * 最小可演示的 Supervisor 图：主图只做意图路由，业务叶节点各自调模型。
  * <p>
- * 实现 {@link GraphPort}，让 {@link GraphAgentHandler} / Gateway 只依赖 Port，
+ * 实现 {@link GraphPort}，让 agents 的 GraphAgent / Gateway 只依赖 Port，
  * Spring AI Alibaba Graph SDK（{@code StateGraph} / {@code CompiledGraph}）留在本类，不泄漏到 kernel。
  *
  * <h2>拓扑（面试时建议默画）</h2>
@@ -60,9 +63,10 @@ import org.slf4j.LoggerFactory;
  * </ul>
  *
  * <h2>边界</h2>
- * 叶节点只依赖 {@link ChatPort}，不注入 Mapper / Conversation / Memory。
+ * 叶节点只依赖 {@link ChatPort} + {@link ModelRouter}，不注入 Mapper / Conversation / Memory。
  * history / memory / retrieve 由 Gateway 装好后经 {@link GraphRunRequest} 传入，
- * 与单 Agent 路径一致，避免图里再查库。
+ * 与单 Agent 路径一致，避免图里再查库。不同叶可配不同模型（chat 小 / review 大）。
+ * SSE 时 {@link GraphRunRequest#sink()} 经闭包进节点：路由节点先 {@code onRoute}，叶内 {@code stream}。
  */
 public final class SupervisorGraph implements GraphPort {
 
@@ -101,45 +105,67 @@ public final class SupervisorGraph implements GraphPort {
     /** 叶节点共用的 ChatPort；本图不直接依赖 DashScope SDK。 */
     private final ChatPort chatPort;
 
+    /** 按叶任务键解析模型；未配置时返回空，走适配器默认模型。 */
+    private final ModelRouter models;
+
+    /** 可选：把选用模型写入本轮观测。 */
+    private final ObservePort observe;
+
     public SupervisorGraph(ChatPort chatPort) {
+        this(chatPort, task -> null, null);
+    }
+
+    public SupervisorGraph(ChatPort chatPort, ModelRouter models) {
+        this(chatPort, models, null);
+    }
+
+    public SupervisorGraph(ChatPort chatPort, ModelRouter models, ObservePort observe) {
         this.chatPort = chatPort;
+        this.models = models == null ? task -> null : models;
+        this.observe = observe;
     }
 
     /**
-     * {@link GraphPort} 标准入口：拆 {@link GraphRunRequest} 后走同步编排。
+     * {@link GraphPort} 标准入口：拆 {@link GraphRunRequest} 后走编排。
      * null 请求按空输入处理，避免 Handler 侧 NPE。
+     * {@link GraphRunRequest#sink()} 非空时叶节点走 {@link ChatPort#stream}。
      */
     @Override
     public GraphRunResult run(GraphRunRequest request) {
         GraphRunRequest req = request == null
                 ? new GraphRunRequest("", List.of(), "", "")
                 : request;
-        return run(req.input(), req.history(), req.memoryNotes(), req.retrievedContext());
+        return run(req.input(), req.history(), req.memoryNotes(), req.retrievedContext(), req.sink());
     }
 
     /**
-     * 编译并执行一整次 Supervisor 调用（包内 / 单测便捷入口）。
-     *
-     * @param input            用户输入（路由依据 + 叶节点 prompt）
-     * @param history          Gateway 装好的短会话；不进 {@link OverAllState}，靠闭包传给叶节点
-     *                         （避免把复杂对象塞进图状态序列化）
-     * @param memoryNotes      长期记忆文本，写入初始 state，叶节点读出拼进 system
-     * @param retrievedContext 检索片段，同上
-     * @return 路由名 + 叶节点模型原文（不含 HTTP 层 {@code [route=…]} 前缀；前缀由 Handler 加）
+     * 同步便捷入口（无 SSE）。
      */
     public GraphRunResult run(
             String input, List<ConversationTurn> history, String memoryNotes, String retrievedContext) {
-        try {
-            // 每次 run 重新 compile：history 通过闭包绑到叶节点；课表演示优先清晰，不做图缓存
-            CompiledGraph graph = compile(history == null ? List.of() : history);
+        return run(input, history, memoryNotes, retrievedContext, null);
+    }
 
-            // 初始 state：只放图内需要流转的键；route / output 由节点写入
+    /**
+     * 编译并执行一整次 Supervisor 调用。
+     *
+     * @param sink 非空时：intent 上报 route，叶节点 stream 推 delta；空则 complete
+     */
+    public GraphRunResult run(
+            String input,
+            List<ConversationTurn> history,
+            String memoryNotes,
+            String retrievedContext,
+            TokenSink sink) {
+        try {
+            // history / sink 闭包进节点：图状态不序列化 TokenSink（异步线程也安全）
+            CompiledGraph graph = compile(history == null ? List.of() : history, sink);
+
             Map<String, Object> seed = new HashMap<>();
             seed.put(SupervisorKeys.INPUT, input == null ? "" : input);
             seed.put(SupervisorKeys.MEMORY, memoryNotes == null ? "" : memoryNotes);
             seed.put(SupervisorKeys.RETRIEVED, retrievedContext == null ? "" : retrievedContext);
 
-            // invoke：同步跑完整条路径直到 END，返回终态快照
             Optional<OverAllState> done = graph.invoke(seed);
             if (done.isEmpty()) {
                 throw new IllegalStateException("supervisor graph returned empty state");
@@ -147,10 +173,10 @@ public final class SupervisorGraph implements GraphPort {
             OverAllState state = done.get();
             String route = String.valueOf(state.value(SupervisorKeys.ROUTE, IntentRouter.CHAT));
             String output = String.valueOf(state.value(SupervisorKeys.OUTPUT, ""));
-            log.info("supervisor done route={} outputChars={}", route, output.length());
-            return new GraphRunResult(route, output);
+            String model = String.valueOf(state.value(SupervisorKeys.MODEL, ""));
+            log.info("supervisor done route={} model={} outputChars={}", route, model, output.length());
+            return new GraphRunResult(route, output, model);
         } catch (GraphStateException ex) {
-            // Graph API 检查失败（重复节点名、边不合法等）→ 收成运行时异常，避免泄漏到 HTTP 栈细节
             throw new IllegalStateException("supervisor graph compile/run failed", ex);
         }
     }
@@ -158,35 +184,25 @@ public final class SupervisorGraph implements GraphPort {
     /**
      * 组装 {@link StateGraph} 并 compile。
      * <p>
-     * 节点用 {@link AsyncNodeAction#node_async} 包装同步逻辑：框架统一按异步 Action 调度，
-     * 本沙盘叶节点内部仍是同步 {@link ChatPort#complete}。
-     * <p>
-     * 条件边：{@link AsyncEdgeAction} 的返回值必须是 mappings 的 <b>key</b>
-     *（{@link IntentRouter#CHAT} / {@link IntentRouter#KNOWLEDGE} / {@link IntentRouter#REVIEW}），
-     * value 才是真正要跳转的节点 id（{@link #N_CHAT} 等）。
+     * 无 sink：叶内 {@link ChatPort#complete}；有 sink：叶内 {@link ChatPort#stream}。
      */
-    CompiledGraph compile(List<ConversationTurn> history) throws GraphStateException {
+    CompiledGraph compile(List<ConversationTurn> history, TokenSink sink) throws GraphStateException {
         StateGraph g = new StateGraph(keyFactory());
 
-        // —— 节点 ——
-        g.addNode(N_INTENT, AsyncNodeAction.node_async(this::intentRouter));
-        // history 捕获进闭包：图状态里不存 List<ConversationTurn>
-        g.addNode(N_CHAT, AsyncNodeAction.node_async(state -> chatLeaf(state, history)));
-        g.addNode(N_KNOWLEDGE, AsyncNodeAction.node_async(state -> knowledgeLeaf(state, history)));
-        g.addNode(N_REVIEW, AsyncNodeAction.node_async(state -> reviewLeaf(state, history)));
+        g.addNode(N_INTENT, AsyncNodeAction.node_async(state -> intentRouter(state, sink)));
+        g.addNode(N_CHAT, AsyncNodeAction.node_async(state -> chatLeaf(state, history, sink)));
+        g.addNode(N_KNOWLEDGE, AsyncNodeAction.node_async(state -> knowledgeLeaf(state, history, sink)));
+        g.addNode(N_REVIEW, AsyncNodeAction.node_async(state -> reviewLeaf(state, history, sink)));
 
-        // —— 边 ——
         g.addEdge(START, N_INTENT);
         g.addConditionalEdges(
                 N_INTENT,
-                // 边条件：读 intentRouter 写入的 route，决定下一跳
                 AsyncEdgeAction.edge_async(state ->
                         String.valueOf(state.value(SupervisorKeys.ROUTE, IntentRouter.CHAT))),
                 Map.of(
                         IntentRouter.CHAT, N_CHAT,
                         IntentRouter.KNOWLEDGE, N_KNOWLEDGE,
                         IntentRouter.REVIEW, N_REVIEW));
-        // 三叶都直接结束；以后若要「叶后再汇总」，在这里改成汇聚节点而不是 END
         g.addEdge(N_CHAT, END);
         g.addEdge(N_KNOWLEDGE, END);
         g.addEdge(N_REVIEW, END);
@@ -194,77 +210,90 @@ public final class SupervisorGraph implements GraphPort {
         return g.compile();
     }
 
-    /**
-     * 路由节点：只写 {@link SupervisorKeys#ROUTE}，不调模型。
-     * <p>
-     * 决策委托 {@link IntentRouter#decide}（纯函数关键词规则），节点返回的 Map
-     * 会按 {@link KeyStrategy}（此处为 Replace）合并进 {@link OverAllState}。
-     */
-    private Map<String, Object> intentRouter(OverAllState state) {
+    private Map<String, Object> intentRouter(OverAllState state, TokenSink sink) {
         String input = String.valueOf(state.value(SupervisorKeys.INPUT, ""));
         String route = IntentRouter.decide(input);
         log.info("supervisor route={} inputChars={}", route, input.length());
+        if (sink != null && !sink.cancelled()) {
+            sink.onRoute(route);
+        }
         return Map.of(SupervisorKeys.ROUTE, route);
     }
 
-    /**
-     * 闲聊叶：system 复用 {@link ChatAgent#systemPrompt}，与 {@code agentId=chat} 行为对齐，
-     * 便于对比「同模型入口、有无图路由」的差异。
-     */
-    private Map<String, Object> chatLeaf(OverAllState state, List<ConversationTurn> history) {
+    private Map<String, Object> chatLeaf(
+            OverAllState state, List<ConversationTurn> history, TokenSink sink) {
         String input = String.valueOf(state.value(SupervisorKeys.INPUT, ""));
         String memory = String.valueOf(state.value(SupervisorKeys.MEMORY, ""));
         String retrieved = String.valueOf(state.value(SupervisorKeys.RETRIEVED, ""));
-        String output = chatPort.complete(
-                new ChatRequest(null, input, ChatAgent.systemPrompt(memory, retrieved), history));
-        return Map.of(SupervisorKeys.OUTPUT, output);
+        String model = resolveAndMark(ModelRouter.CHAT);
+        String output =
+                invokeLeaf(model, input, ChatAgent.systemPrompt(memory, retrieved), history, sink);
+        return leafResult(model, output);
     }
 
-    /**
-     * 知识叶：换一套更「死磕参考资料」的 system；retrieve 为空时也显式写进 prompt，
-     * 避免模型假装有依据。
-     */
-    private Map<String, Object> knowledgeLeaf(OverAllState state, List<ConversationTurn> history) {
+    private Map<String, Object> knowledgeLeaf(
+            OverAllState state, List<ConversationTurn> history, TokenSink sink) {
         String input = String.valueOf(state.value(SupervisorKeys.INPUT, ""));
         String memory = String.valueOf(state.value(SupervisorKeys.MEMORY, ""));
         String retrieved = String.valueOf(state.value(SupervisorKeys.RETRIEVED, ""));
-        String output = chatPort.complete(new ChatRequest(null, input, knowledgeSystem(memory, retrieved), history));
-        return Map.of(SupervisorKeys.OUTPUT, output);
+        String model = resolveAndMark(ModelRouter.KNOWLEDGE);
+        String output = invokeLeaf(model, input, knowledgeSystem(memory, retrieved), history, sink);
+        return leafResult(model, output);
     }
 
-    /**
-     * 评审叶：独立人设，强调风险 / 边界 / 可维护性；与 knowledge 叶并列，证明「加叶不必改旧叶」。
-     */
-    private Map<String, Object> reviewLeaf(OverAllState state, List<ConversationTurn> history) {
+    private Map<String, Object> reviewLeaf(
+            OverAllState state, List<ConversationTurn> history, TokenSink sink) {
         String input = String.valueOf(state.value(SupervisorKeys.INPUT, ""));
         String memory = String.valueOf(state.value(SupervisorKeys.MEMORY, ""));
         String retrieved = String.valueOf(state.value(SupervisorKeys.RETRIEVED, ""));
-        String output = chatPort.complete(new ChatRequest(null, input, reviewSystem(memory, retrieved), history));
-        return Map.of(SupervisorKeys.OUTPUT, output);
+        String model = resolveAndMark(ModelRouter.REVIEW);
+        String output = invokeLeaf(model, input, reviewSystem(memory, retrieved), history, sink);
+        return leafResult(model, output);
     }
 
-    /**
-     * 拼 knowledge 叶 system。单测可直接断言「空参考资料」分支是否出现。
-     */
+    private String invokeLeaf(
+            String model,
+            String input,
+            String system,
+            List<ConversationTurn> history,
+            TokenSink sink) {
+        ChatRequest request = new ChatRequest(model, input, system, history);
+        if (sink != null && !sink.cancelled()) {
+            if (model != null && !model.isBlank()) {
+                sink.onModel(model);
+            }
+            return chatPort.stream(request, sink);
+        }
+        return chatPort.complete(request);
+    }
+
+    private static Map<String, Object> leafResult(String model, String output) {
+        Map<String, Object> result = new HashMap<>();
+        result.put(SupervisorKeys.OUTPUT, output == null ? "" : output);
+        result.put(SupervisorKeys.MODEL, model == null ? "" : model);
+        return result;
+    }
+
+    private String resolveAndMark(String taskKey) {
+        String model = models.resolve(taskKey);
+        if (observe != null && model != null && !model.isBlank()) {
+            observe.markModel(model);
+        }
+        return model;
+    }
+
     static String knowledgeSystem(String memoryNotes, String retrievedContext) {
         StringBuilder system = new StringBuilder(KNOWLEDGE_SYSTEM);
         appendMemoryAndRetrieved(system, memoryNotes, retrievedContext);
         return system.toString();
     }
 
-    /**
-     * 拼 review 叶 system；记忆 / 检索拼接规则与 knowledge 共用，避免两套漂移。
-     */
     static String reviewSystem(String memoryNotes, String retrievedContext) {
         StringBuilder system = new StringBuilder(REVIEW_SYSTEM);
         appendMemoryAndRetrieved(system, memoryNotes, retrievedContext);
         return system.toString();
     }
 
-    /**
-     * 把 Gateway 注入的长期记忆与检索片段追加进 system。
-     * 检索为空时显式写「（空）」，逼模型承认资料不足，而不是默默编造。
-     */
     private static void appendMemoryAndRetrieved(
             StringBuilder system, String memoryNotes, String retrievedContext) {
         if (memoryNotes != null && !memoryNotes.isBlank()) {
@@ -277,11 +306,6 @@ public final class SupervisorGraph implements GraphPort {
         }
     }
 
-    /**
-     * 每个 state 键的合并策略。本图全部用 {@link ReplaceStrategy}：后写覆盖前写。
-     * <p>
-     * 若以后要在多节点追加同一键（如 messages 列表），再对该键改用 Append / 自定义策略。
-     */
     private static KeyStrategyFactory keyFactory() {
         return () -> {
             Map<String, KeyStrategy> strategies = new HashMap<>();
@@ -291,6 +315,7 @@ public final class SupervisorGraph implements GraphPort {
             strategies.put(SupervisorKeys.RETRIEVED, replace);
             strategies.put(SupervisorKeys.ROUTE, replace);
             strategies.put(SupervisorKeys.OUTPUT, replace);
+            strategies.put(SupervisorKeys.MODEL, replace);
             return strategies;
         };
     }

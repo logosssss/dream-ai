@@ -76,6 +76,17 @@ public final class InMemoryObservePort implements ObservePort {
     }
 
     @Override
+    public void markModel(String model) {
+        if (model == null || model.isBlank()) {
+            return;
+        }
+        Pending pending = current.get();
+        if (pending != null) {
+            pending.model.set(model.trim());
+        }
+    }
+
+    @Override
     public void markToolBlocked(String toolName) {
         if (toolName == null || toolName.isBlank()) {
             return;
@@ -92,10 +103,12 @@ public final class InMemoryObservePort implements ObservePort {
         current.remove();
         if (pending == null) {
             clearMdc();
-            return new InvokeObservation("", "", "", 0L, 0, 0, success, errorMessage, "", List.of(), List.of());
+            return new InvokeObservation(
+                    "", "", "", 0L, 0, 0, success, errorMessage, "", "", List.of(), List.of());
         }
         long durationMs = Math.max(0L, (System.nanoTime() - pending.startNanos) / 1_000_000L);
         String route = pending.route.get();
+        String model = pending.model.get();
         InvokeObservation observation = new InvokeObservation(
                 pending.traceId,
                 pending.sessionId,
@@ -106,6 +119,7 @@ public final class InMemoryObservePort implements ObservePort {
                 success,
                 errorMessage,
                 route == null ? "" : route,
+                model == null ? "" : model,
                 List.copyOf(pending.blockedTools),
                 List.copyOf(pending.executedTools));
         ring.addFirst(observation);
@@ -141,6 +155,7 @@ public final class InMemoryObservePort implements ObservePort {
         private final AtomicInteger modelCalls = new AtomicInteger();
         private final AtomicInteger toolCalls = new AtomicInteger();
         private final AtomicReference<String> route = new AtomicReference<>("");
+        private final AtomicReference<String> model = new AtomicReference<>("");
         private final Set<String> blockedTools = new LinkedHashSet<>();
         private final List<String> executedTools = new ArrayList<>();
 

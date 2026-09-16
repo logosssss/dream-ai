@@ -124,6 +124,7 @@ public class ChatConfig {
             ObservePort observe,
             ConfigurableToolPolicy policy,
             @Value("${spring.ai.dashscope.chat.options.multi-model:#{null}}") Boolean multiModel,
+            @Value("${spring.ai.dashscope.chat.options.model:#{null}}") String defaultModel,
             @Value("${dream.stream.timeout-ms:120000}") long streamTimeoutMs) {
         List<ToolCallback> merged = ToolCallbackSupport.merge(callbacks, providers);
         List<ToolCallback> visible = ModelVisibleTools.filter(merged, policy);
@@ -131,6 +132,7 @@ public class ChatConfig {
                 "ChatPort visible to model tools={} (only these are advertised; allowlist={})",
                 ToolCallbackSupport.summarize(visible),
                 policy.allowlist());
-        return new DashScopeChatAdapter(chatModel, visible, tools, observe, multiModel, streamTimeoutMs);
+        return new DashScopeChatAdapter(
+                chatModel, visible, tools, observe, multiModel, streamTimeoutMs, defaultModel);
     }
 }

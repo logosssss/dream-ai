@@ -12,7 +12,7 @@
 
     <artifactId>dream-ai-agents</artifactId>
     <name>dream-ai-agents</name>
-    <description>Agent SPI 与业务包（chat / review / …）。只依赖 kernel。</description>
+    <description>Agent SPI 与业务包（chat / graph / …）。只依赖 kernel。</description>
 
     <dependencies>
         <dependency>

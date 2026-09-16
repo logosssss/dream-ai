@@ -78,6 +78,12 @@ dream:
     # 超过软上限则 LLM 摘要写回；硬上限仍见 InMemoryMemoryPort.MAX_CHARS
     soft-max-chars: ${DREAM_MEMORY_SOFT_MAX_CHARS:3000}
     summary-target-chars: ${DREAM_MEMORY_SUMMARY_TARGET_CHARS:1200}
+  # 按任务选模型；空 = 用 spring.ai.dashscope.chat.options.model
+  models:
+    default: ${DREAM_MODEL_DEFAULT:deepseek-v4-pro}
+    chat: ${DREAM_MODEL_CHAT:qwen3.8-27b}
+    knowledge: ${DREAM_MODEL_KNOWLEDGE:qwen3.7-plus}
+    review: ${DREAM_MODEL_REVIEW:qwen3.8-27b}
   tools:
     # 非空则仅名单内工具可执行（仍声明给模型，便于演示拦截）；空 = 不限制执行
     allowlist: [datetime_offset,web_search_prime]

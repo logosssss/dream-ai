@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.zhu.ai.observe.InMemoryObservePort;
 import com.zhu.ai.tool.GuardedToolPort;
+import com.zhu.ai.kernel.llm.TokenSink;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -144,5 +145,46 @@ class ToolCallingLoopTest {
                 },
                 (name, args) -> "unknown tool: " + name);
         assertEquals("工具不可用", loop.run(List.of(new UserMessage("x"))));
+    }
+
+    @Test
+    void emitToolLifecycleToSink() {
+        AtomicInteger steps = new AtomicInteger();
+        InMemoryObservePort observe = new InMemoryObservePort();
+        observe.begin("s", "chat");
+        List<String> starts = new java.util.ArrayList<>();
+        List<String> executed = new java.util.ArrayList<>();
+        TokenSink sink = new TokenSink() {
+            @Override
+            public void onDelta(String delta) {}
+
+            @Override
+            public void onToolStart(String toolName) {
+                starts.add(toolName);
+            }
+
+            @Override
+            public void onToolExecuted(String toolName) {
+                executed.add(toolName);
+            }
+        };
+        ToolCallingLoop loop = new ToolCallingLoop(
+                messages -> {
+                    int n = steps.incrementAndGet();
+                    if (n == 1) {
+                        return AssistantMessage.builder()
+                                .content("")
+                                .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                        "c1", "function", "current_date_time", "{}")))
+                                .build();
+                    }
+                    return new AssistantMessage("ok");
+                },
+                (name, args) -> "tick",
+                observe,
+                sink);
+        assertEquals("ok", loop.run(List.of(new UserMessage("几点"))));
+        assertEquals(List.of("current_date_time"), starts);
+        assertEquals(List.of("current_date_time"), executed);
     }
 }

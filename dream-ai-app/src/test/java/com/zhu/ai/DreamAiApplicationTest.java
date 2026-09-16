@@ -90,6 +90,7 @@ class DreamAiApplicationTest {
                 .andExpect(jsonPath("$.modelCalls").value(0))
                 .andExpect(jsonPath("$.toolCalls").value(0))
                 .andExpect(jsonPath("$.route").value(""))
+                .andExpect(jsonPath("$.model").value("qwen3.8-27b"))
                 .andExpect(jsonPath("$.blockedTools").isArray())
                 .andExpect(jsonPath("$.blockedTools.length()").value(0));
         mockMvc.perform(get("/api/observe?limit=5"))
@@ -97,6 +98,7 @@ class DreamAiApplicationTest {
                 .andExpect(jsonPath("$[0].sessionId").value("obs-http"))
                 .andExpect(jsonPath("$[0].success").value(true))
                 .andExpect(jsonPath("$[0].route").value(""))
+                .andExpect(jsonPath("$[0].model").value("qwen3.8-27b"))
                 .andExpect(jsonPath("$[0].blockedTools").isArray());
     }
 
@@ -108,10 +110,12 @@ class DreamAiApplicationTest {
                                 "{\"agentId\":\"graph\",\"sessionId\":\"obs-graph\",\"input\":\"请审查这段代码有没有风险点\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.route").value("review"))
+                .andExpect(jsonPath("$.model").value("qwen3.8-27b"))
                 .andExpect(jsonPath("$.output").value(org.hamcrest.Matchers.containsString("[route=review]")));
         mockMvc.perform(get("/api/observe?limit=1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].route").value("review"))
+                .andExpect(jsonPath("$[0].model").value("qwen3.8-27b"))
                 .andExpect(jsonPath("$[0].agentId").value("graph"));
     }
 
@@ -125,8 +129,29 @@ class DreamAiApplicationTest {
                 .andReturn();
         mockMvc.perform(asyncDispatch(mvcResult))
                 .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:model")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"model\":\"qwen3.8-27b\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:delta")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("stub:0:n:n:hello")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:done")));
+    }
+
+    @Test
+    void invokeStreamGraphEmitsRouteEvent() throws Exception {
+        var mvcResult = mockMvc.perform(post("/api/agent/invoke/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content(
+                                "{\"agentId\":\"graph\",\"sessionId\":\"sse-graph\",\"input\":\"请审查这段代码有没有风险点\"}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        mockMvc.perform(asyncDispatch(mvcResult))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:route")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"route\":\"review\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:model")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"model\":\"qwen3.8-27b\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:delta")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:done")));
     }
 

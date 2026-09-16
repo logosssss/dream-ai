@@ -6,6 +6,7 @@ import com.zhu.ai.kernel.runtime.AgentGateway;
 import com.zhu.ai.kernel.runtime.AgentInvokeResult;
 import com.zhu.ai.tool.ToolApprovalContext;
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -59,8 +60,15 @@ public class AgentInvokeController {
     }
 
     /**
-     * SSE：{@code event:delta} 增量文本；{@code event:done} 完整 {@link AgentInvokeHttpResponse}；
-     * {@code event:error} 失败。客户端断开或超时会取消模型 stream。
+     * SSE 事件：
+     * <ul>
+     *   <li>{@code route} — Graph 选中叶，data 为 {@code {"route":"review"}}</li>
+     *   <li>{@code model} — 本轮选用模型，data 为 {@code {"model":"qwen-turbo"}}</li>
+     *   <li>{@code tool_start} / {@code tool_blocked} / {@code tool_executed} — 工具生命周期</li>
+     *   <li>{@code delta} — 文本增量</li>
+     *   <li>{@code done} — 完整 {@link AgentInvokeHttpResponse}</li>
+     *   <li>{@code error} — 失败</li>
+     * </ul>
      */
     @PostMapping(value = "/invoke/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter invokeStream(
@@ -85,15 +93,32 @@ public class AgentInvokeController {
             AgentInvokeResult result = agentGateway.invokeStream(request.toKernel(), new TokenSink() {
                 @Override
                 public void onDelta(String delta) {
-                    if (cancelled.get() || delta == null || delta.isEmpty()) {
-                        return;
-                    }
-                    try {
-                        emitter.send(SseEmitter.event().name("delta").data(delta));
-                    } catch (IOException ex) {
-                        cancelled.set(true);
-                        throw new StreamCancelledException("sse send failed", ex);
-                    }
+                    sendNamed(emitter, cancelled, "delta", delta);
+                }
+
+                @Override
+                public void onRoute(String route) {
+                    sendNamed(emitter, cancelled, "route", toolPayload("route", route));
+                }
+
+                @Override
+                public void onModel(String model) {
+                    sendNamed(emitter, cancelled, "model", toolPayload("model", model));
+                }
+
+                @Override
+                public void onToolStart(String toolName) {
+                    sendNamed(emitter, cancelled, "tool_start", toolPayload("tool", toolName));
+                }
+
+                @Override
+                public void onToolBlocked(String toolName) {
+                    sendNamed(emitter, cancelled, "tool_blocked", toolPayload("tool", toolName));
+                }
+
+                @Override
+                public void onToolExecuted(String toolName) {
+                    sendNamed(emitter, cancelled, "tool_executed", toolPayload("tool", toolName));
                 }
 
                 @Override
@@ -118,6 +143,28 @@ public class AgentInvokeController {
             emitter.completeWithError(ex);
         } finally {
             ToolApprovalContext.close();
+        }
+    }
+
+    private static Map<String, String> toolPayload(String key, String value) {
+        Map<String, String> body = new LinkedHashMap<>(1);
+        body.put(key, value == null ? "" : value);
+        return body;
+    }
+
+    private static void sendNamed(
+            SseEmitter emitter, AtomicBoolean cancelled, String event, Object data) {
+        if (cancelled.get() || data == null) {
+            return;
+        }
+        if (data instanceof String text && text.isEmpty()) {
+            return;
+        }
+        try {
+            emitter.send(SseEmitter.event().name(event).data(data));
+        } catch (IOException ex) {
+            cancelled.set(true);
+            throw new StreamCancelledException("sse send failed", ex);
         }
     }
 }

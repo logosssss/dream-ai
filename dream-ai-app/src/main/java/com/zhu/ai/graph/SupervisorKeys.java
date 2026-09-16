@@ -10,6 +10,7 @@ public final class SupervisorKeys {
     public static final String RETRIEVED = "retrievedContext";
     public static final String ROUTE = "route";
     public static final String OUTPUT = "output";
+    public static final String MODEL = "model";
 
     private SupervisorKeys() {}
 }

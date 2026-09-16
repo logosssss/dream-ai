@@ -23,6 +23,9 @@ public interface ObservePort {
     /** 记录 Graph Supervisor 选中的业务叶（chat / knowledge / review …）。 */
     void markRoute(String route);
 
+    /** 记录本轮实际选用的聊天模型 id（按任务路由或适配器默认）。 */
+    void markModel(String model);
+
     /** 记录被策略拦截的工具名（不计入 toolCalls / executedTools）。 */
     void markToolBlocked(String toolName);
 

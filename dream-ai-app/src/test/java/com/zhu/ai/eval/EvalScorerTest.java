@@ -37,7 +37,7 @@ class EvalScorerTest {
                 "graph",
                 "[route=chat]\nok",
                 new InvokeObservation(
-                        "t1", "s", "graph", 10, 1, 0, true, null, "chat", List.of(), List.of()));
+                        "t1", "s", "graph", 10, 1, 0, true, null, "chat", "", List.of(), List.of()));
         EvalCaseResult scored = EvalScorer.score(c, result);
         assertTrue(scored.passed());
         assertTrue(scored.failures().isEmpty());
@@ -55,7 +55,7 @@ class EvalScorerTest {
                 "graph",
                 "[route=chat]\nok",
                 new InvokeObservation(
-                        "t1", "s", "graph", 10, 1, 2, true, null, "chat", List.of(), List.of("current_date_time")));
+                        "t1", "s", "graph", 10, 1, 2, true, null, "chat", "", List.of(), List.of("current_date_time")));
         EvalCaseResult scored = EvalScorer.score(c, result);
         assertFalse(scored.passed());
         assertTrue(scored.failures().stream().anyMatch(f -> f.contains("output missing")));
@@ -93,6 +93,7 @@ class EvalScorerTest {
                         true,
                         null,
                         "",
+                        "",
                         List.of("web_search_prime"),
                         List.of("datetime_offset")));
         assertTrue(EvalScorer.score(c, pass).passed());
@@ -101,7 +102,7 @@ class EvalScorerTest {
                 "chat",
                 "ok",
                 new InvokeObservation(
-                        "t2", "s", "chat", 5, 2, 0, true, null, "", List.of(), List.of()));
+                        "t2", "s", "chat", 5, 2, 0, true, null, "", "", List.of(), List.of()));
         EvalCaseResult scored = EvalScorer.score(c, fail);
         assertFalse(scored.passed());
         assertTrue(scored.failures().stream().anyMatch(f -> f.contains("blockedTools missing")));
@@ -119,7 +120,7 @@ class EvalScorerTest {
         AgentInvokeResult wrong = new AgentInvokeResult(
                 "graph",
                 "[route=chat]\nx",
-                new InvokeObservation("t", "s", "graph", 1, 1, 0, true, null, "chat", List.of(), List.of()));
+                new InvokeObservation("t", "s", "graph", 1, 1, 0, true, null, "chat", "", List.of(), List.of()));
         assertTrue(EvalScorer.score(c, wrong).failures().stream().anyMatch(f -> f.contains("route expected review")));
     }
 

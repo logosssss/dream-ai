@@ -129,7 +129,7 @@ public final class DefaultAgentGateway implements AgentGateway {
         publishMemoryRemembered(sessionId);
         InvokeObservation observation = observe.complete(true, null);
         log.info(
-                "gateway store traceId={} session={} outputChars={} durationMs={} modelCalls={} toolCalls={} route={} blockedTools={}",
+                "gateway store traceId={} session={} outputChars={} durationMs={} modelCalls={} toolCalls={} route={} model={} blockedTools={}",
                 observation.traceId(),
                 sessionId,
                 result.output() == null ? 0 : result.output().length(),
@@ -137,6 +137,7 @@ public final class DefaultAgentGateway implements AgentGateway {
                 observation.modelCalls(),
                 observation.toolCalls(),
                 observation.route(),
+                observation.model(),
                 observation.blockedTools());
         return new AgentInvokeResult(result.agentId(), result.output(), observation);
     }

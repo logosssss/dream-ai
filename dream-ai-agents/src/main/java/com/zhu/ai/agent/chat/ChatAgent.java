@@ -3,7 +3,9 @@ package com.zhu.ai.agent.chat;
 import com.zhu.ai.kernel.agent.AgentHandler;
 import com.zhu.ai.kernel.llm.ChatPort;
 import com.zhu.ai.kernel.llm.ChatRequest;
+import com.zhu.ai.kernel.llm.ModelRouter;
 import com.zhu.ai.kernel.llm.TokenSink;
+import com.zhu.ai.kernel.observe.ObservePort;
 import com.zhu.ai.kernel.runtime.AgentInvokeRequest;
 import com.zhu.ai.kernel.runtime.AgentInvokeResult;
 import org.springframework.stereotype.Component;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Component;
  * <p>
  * 写 system prompt 和入参校验；把 Gateway 填好的 history / 长期记忆 / 检索片段交给 {@link ChatPort}，
  * 不注入会话、记忆或知识存储。同步走 {@link #handle}；SSE 走 {@link #handleStream}。
+ * 模型 id 由 {@link ModelRouter} 按任务键 {@link ModelRouter#CHAT} 解析，并写入观测。
  */
 @Component
 public class ChatAgent implements AgentHandler {
@@ -29,9 +32,13 @@ public class ChatAgent implements AgentHandler {
                     + "参考资料只覆盖仓库知识；时效问题不要用参考资料代替联网搜索。\n";
 
     private final ChatPort chatPort;
+    private final ModelRouter models;
+    private final ObservePort observe;
 
-    public ChatAgent(ChatPort chatPort) {
+    public ChatAgent(ChatPort chatPort, ModelRouter models, ObservePort observe) {
         this.chatPort = chatPort;
+        this.models = models == null ? task -> null : models;
+        this.observe = observe;
     }
 
     @Override
@@ -51,7 +58,11 @@ public class ChatAgent implements AgentHandler {
 
     @Override
     public AgentInvokeResult handleStream(AgentInvokeRequest request, TokenSink sink) {
-        return new AgentInvokeResult(ID, chatPort.stream(chatRequest(request), sink));
+        ChatRequest chatRequest = chatRequest(request);
+        if (sink != null && chatRequest.model() != null && !chatRequest.model().isBlank()) {
+            sink.onModel(chatRequest.model());
+        }
+        return new AgentInvokeResult(ID, chatPort.stream(chatRequest, sink));
     }
 
     private ChatRequest chatRequest(AgentInvokeRequest request) {
@@ -59,8 +70,15 @@ public class ChatAgent implements AgentHandler {
         if (input == null || input.isBlank()) {
             throw new IllegalArgumentException("input required");
         }
+        String model = models.resolve(ModelRouter.CHAT);
+        if (observe != null && model != null && !model.isBlank()) {
+            observe.markModel(model);
+        }
         return new ChatRequest(
-                null, input, systemPrompt(request.memoryNotes(), request.retrievedContext()), request.history());
+                model,
+                input,
+                systemPrompt(request.memoryNotes(), request.retrievedContext()),
+                request.history());
     }
 
     public static String systemPrompt(String memoryNotes, String retrievedContext) {

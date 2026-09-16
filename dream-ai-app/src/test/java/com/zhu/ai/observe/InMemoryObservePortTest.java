@@ -14,12 +14,14 @@ class InMemoryObservePortTest {
         observe.begin("s1", "graph");
         observe.markModelCall();
         observe.markRoute("review");
+        observe.markModel("qwen-max");
         observe.markToolBlocked("web_search_prime");
         observe.markToolBlocked("web_search_prime");
         observe.markToolExecuted("datetime_offset");
 
         var obs = observe.complete(true, null);
         assertEquals("review", obs.route());
+        assertEquals("qwen-max", obs.model());
         assertEquals(List.of("web_search_prime"), obs.blockedTools());
         assertEquals(List.of("datetime_offset"), obs.executedTools());
         assertEquals(1, obs.modelCalls());

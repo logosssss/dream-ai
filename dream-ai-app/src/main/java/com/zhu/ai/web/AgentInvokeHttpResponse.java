@@ -15,6 +15,7 @@ public record AgentInvokeHttpResponse(
         int modelCalls,
         int toolCalls,
         String route,
+        String model,
         List<String> blockedTools,
         List<String> executedTools) {
 
@@ -22,7 +23,7 @@ public record AgentInvokeHttpResponse(
         InvokeObservation observe = result.observe();
         if (observe == null) {
             return new AgentInvokeHttpResponse(
-                    result.agentId(), result.output(), "", 0L, 0, 0, "", List.of(), List.of());
+                    result.agentId(), result.output(), "", 0L, 0, 0, "", "", List.of(), List.of());
         }
         return new AgentInvokeHttpResponse(
                 result.agentId(),
@@ -32,6 +33,7 @@ public record AgentInvokeHttpResponse(
                 observe.modelCalls(),
                 observe.toolCalls(),
                 observe.route(),
+                observe.model(),
                 observe.blockedTools(),
                 observe.executedTools());
     }

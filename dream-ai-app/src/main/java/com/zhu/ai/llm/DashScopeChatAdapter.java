@@ -37,6 +37,7 @@ public final class DashScopeChatAdapter implements ChatPort {
     private final ObservePort observe;
     private final Boolean multiModel;
     private final long streamTimeoutMs;
+    private final String defaultModel;
 
     public DashScopeChatAdapter(
             ChatModel chatModel,
@@ -44,7 +45,7 @@ public final class DashScopeChatAdapter implements ChatPort {
             ToolPort tools,
             ObservePort observe,
             Boolean multiModel) {
-        this(chatModel, toolCallbacks, tools, observe, multiModel, 120_000L);
+        this(chatModel, toolCallbacks, tools, observe, multiModel, 120_000L, null);
     }
 
     public DashScopeChatAdapter(
@@ -54,29 +55,48 @@ public final class DashScopeChatAdapter implements ChatPort {
             ObservePort observe,
             Boolean multiModel,
             long streamTimeoutMs) {
+        this(chatModel, toolCallbacks, tools, observe, multiModel, streamTimeoutMs, null);
+    }
+
+    public DashScopeChatAdapter(
+            ChatModel chatModel,
+            List<ToolCallback> toolCallbacks,
+            ToolPort tools,
+            ObservePort observe,
+            Boolean multiModel,
+            long streamTimeoutMs,
+            String defaultModel) {
         this.chatModel = chatModel;
         this.toolCallbacks = List.copyOf(toolCallbacks);
         this.tools = tools;
         this.observe = observe;
         this.multiModel = multiModel;
         this.streamTimeoutMs = streamTimeoutMs > 0 ? streamTimeoutMs : 120_000L;
+        this.defaultModel = StringUtils.hasText(defaultModel) ? defaultModel.trim() : null;
     }
 
     @Override
     public String complete(ChatRequest request) {
+        String model = resolveModel(request);
+        markModel(model);
         ToolCallingLoop loop =
-                new ToolCallingLoop(messages -> oneStep(messages, request.model()), tools, observe);
+                new ToolCallingLoop(messages -> oneStep(messages, model), tools, observe);
         return loop.run(seedMessages(request));
     }
 
     @Override
     public String stream(ChatRequest request, TokenSink sink) {
+        String model = resolveModel(request);
+        markModel(model);
+        if (sink != null && StringUtils.hasText(model)) {
+            sink.onModel(model);
+        }
         List<Message> messages = seedMessages(request);
         for (int i = 0; i < ToolCallingLoop.MAX_STEPS; i++) {
             if (sink != null && sink.cancelled()) {
                 throw new StreamCancelledException();
             }
-            AssistantMessage assistant = oneStepStream(messages, request.model(), sink);
+            AssistantMessage assistant = oneStepStream(messages, model, sink);
             if (observe != null) {
                 observe.markModelCall();
             }
@@ -92,8 +112,8 @@ public final class DashScopeChatAdapter implements ChatPort {
                 return ToolCallingLoop.MAX_STEPS_MESSAGE;
             }
             messages.add(assistant);
-            // 与同步循环共用：blocked 不计 toolCalls，只有真正执行才记
-            messages.add(new ToolCallingLoop(m -> null, tools, observe).applyToolCalls(calls));
+            // 与同步循环共用：blocked 不计 toolCalls，只有真正执行才记；SSE 可收 tool_* 事件
+            messages.add(new ToolCallingLoop(m -> null, tools, observe, sink).applyToolCalls(calls));
         }
         return ToolCallingLoop.MAX_STEPS_MESSAGE;
     }
@@ -171,6 +191,20 @@ public final class DashScopeChatAdapter implements ChatPort {
         }
         options.multiModel(resolveMultiModel(model));
         return options.build();
+    }
+
+    /** 请求显式 model 优先，否则用装配默认（spring.ai.dashscope.chat.options.model）。 */
+    private String resolveModel(ChatRequest request) {
+        if (request != null && StringUtils.hasText(request.model())) {
+            return request.model().trim();
+        }
+        return defaultModel;
+    }
+
+    private void markModel(String model) {
+        if (observe != null && StringUtils.hasText(model)) {
+            observe.markModel(model);
+        }
     }
 
     /**
