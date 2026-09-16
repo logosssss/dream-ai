@@ -65,7 +65,7 @@ public final class ClasspathEvalCases {
         }
         JsonNode expectNode = root.get("expect");
         EvalExpect expect = expectNode == null || expectNode.isNull()
-                ? new EvalExpect(null, null, null, null, null, null, null)
+                ? EvalExpect.none()
                 : new EvalExpect(
                         bool(expectNode, "success"),
                         text(expectNode, "agentId"),
@@ -73,7 +73,10 @@ public final class ClasspathEvalCases {
                         strings(expectNode, "outputNotContains"),
                         integer(expectNode, "minToolCalls"),
                         integer(expectNode, "maxToolCalls"),
-                        integer(expectNode, "maxModelCalls"));
+                        integer(expectNode, "maxModelCalls"),
+                        text(expectNode, "route"),
+                        strings(expectNode, "mustBlockTools"),
+                        strings(expectNode, "mustExecuteTools"));
         return new EvalCase(id, agentId, sessionId, input, expect);
     }
 

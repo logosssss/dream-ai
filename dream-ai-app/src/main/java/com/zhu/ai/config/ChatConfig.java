@@ -103,7 +103,11 @@ public class ChatConfig {
             List<ToolCallbackProvider> providers,
             ConfigurableToolPolicy policy) {
         List<ToolCallback> merged = ToolCallbackSupport.merge(callbacks, providers);
-        log.info("ToolPort registered tools={}", ToolCallbackSupport.summarize(merged));
+        // 这里是「进程内全部工具库存」；白名单拦的是「给模型看」+「执行时 GuardedToolPort」
+        log.info(
+                "ToolPort inventory (all, guarded) tools={} allowlist={}",
+                ToolCallbackSupport.summarize(merged),
+                policy.allowlist());
         return new GuardedToolPort(new ToolCallbackPort(merged), policy);
     }
 
@@ -123,7 +127,10 @@ public class ChatConfig {
             @Value("${dream.stream.timeout-ms:120000}") long streamTimeoutMs) {
         List<ToolCallback> merged = ToolCallbackSupport.merge(callbacks, providers);
         List<ToolCallback> visible = ModelVisibleTools.filter(merged, policy);
-        log.info("ChatPort visible tools={}", ToolCallbackSupport.summarize(visible));
+        log.info(
+                "ChatPort visible to model tools={} (only these are advertised; allowlist={})",
+                ToolCallbackSupport.summarize(visible),
+                policy.allowlist());
         return new DashScopeChatAdapter(chatModel, visible, tools, observe, multiModel, streamTimeoutMs);
     }
 }

@@ -12,7 +12,7 @@ public record EvalCase(String id, String agentId, String sessionId, String input
         if (input == null) {
             throw new IllegalArgumentException("eval case input required");
         }
-        expect = expect == null ? new EvalExpect(null, null, null, null, null, null, null) : expect;
+        expect = expect == null ? EvalExpect.none() : expect;
     }
 
     public String resolvedSessionId() {

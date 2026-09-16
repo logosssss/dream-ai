@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 薄观测查询。学契约（trace / 耗时 / 次数），不抄现仓 Admin UI。
+ * 薄观测查询。学契约（trace / 耗时 / 次数 / route / blockedTools），不抄现仓 Admin UI。
  */
 @RestController
 @RequestMapping("/api/observe")

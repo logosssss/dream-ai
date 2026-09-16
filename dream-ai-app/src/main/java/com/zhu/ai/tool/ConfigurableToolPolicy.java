@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 /**
  * 可配置工具策略：
  * <ul>
- *   <li>{@code allowlist} 非空 → 仅名单内可执行（声明给模型的 schema 同步过滤）</li>
+ *   <li>{@code allowlist} 非空 → 仅名单内可<strong>执行</strong>（仍声明给模型，拦截时走 DENY 回传）</li>
  *   <li>{@code requireApproval} + {@code hitlMode=enforce} → 需本轮审批（请求头 / 上下文）</li>
  *   <li>{@code hitlMode=auto} → 审批类工具自动放行（演示 / 测试）</li>
  *   <li>{@code hitlMode=off} → 忽略审批名单</li>
@@ -71,16 +71,14 @@ public final class ConfigurableToolPolicy implements ToolPolicyPort {
         return ToolPolicyDecision.NEED_APPROVAL;
     }
 
-    /** 是否把该工具 schema 声明给模型：白名单外不给；需审批的仍可看。 */
+    /**
+     * 是否把该工具 schema 声明给模型。
+     * 默认全量声明：白名单只拦执行，这样模型仍会发起 tool call，日志能看到 {@code tool blocked}。
+     * 若要从模型侧藏起白名单外工具，另开 advertise 过滤（当前不做）。
+     */
     public boolean visibleToModel(String toolName) {
         String name = toolName == null ? "" : toolName.trim();
-        if (name.isEmpty()) {
-            return false;
-        }
-        if (!allowlist.isEmpty() && !allowlist.contains(name)) {
-            return false;
-        }
-        return true;
+        return !name.isEmpty();
     }
 
     public Set<String> allowlist() {

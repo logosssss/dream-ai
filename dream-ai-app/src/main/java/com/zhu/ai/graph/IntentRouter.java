@@ -6,11 +6,13 @@ import java.util.Locale;
  * Supervisor 意图路由（纯函数，可单测）。
  * <p>
  * 故意用关键词规则而不是再调一次模型：面试时好讲清「路由与业务叶节点解耦」。
+ * 优先级：{@code review} → {@code knowledge} → {@code chat}（先匹配先赢）。
  */
 public final class IntentRouter {
 
     public static final String CHAT = "chat";
     public static final String KNOWLEDGE = "knowledge";
+    public static final String REVIEW = "review";
 
     private IntentRouter() {}
 
@@ -19,6 +21,18 @@ public final class IntentRouter {
             return CHAT;
         }
         String text = input.toLowerCase(Locale.ROOT);
+        if (containsAny(
+                text,
+                "审查",
+                "评审",
+                "review",
+                "帮我看看代码",
+                "这段代码",
+                "有没有问题",
+                "风险点",
+                "code review")) {
+            return REVIEW;
+        }
         if (containsAny(
                 text,
                 "检索",

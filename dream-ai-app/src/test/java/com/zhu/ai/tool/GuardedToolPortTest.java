@@ -41,6 +41,7 @@ class GuardedToolPortTest {
         GuardedToolPort port = new GuardedToolPort(raw, policy);
         String out = port.execute("web_search", "{}");
         assertTrue(out.startsWith("tool denied by policy:"));
+        assertTrue(GuardedToolPort.isPolicyBlock(out));
         assertEquals(0, calls.get());
     }
 

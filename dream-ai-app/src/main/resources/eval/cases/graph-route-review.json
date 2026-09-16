@@ -1,0 +1,13 @@
+{
+  "id": "graph-route-review",
+  "agentId": "graph",
+  "input": "请审查这段代码有没有风险点",
+  "expect": {
+    "success": true,
+    "agentId": "graph",
+    "route": "review",
+    "outputContains": ["[route=review]"],
+    "outputNotContains": ["[route=chat]", "[route=knowledge]"],
+    "maxToolCalls": 0
+  }
+}

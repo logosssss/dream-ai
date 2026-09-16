@@ -2,6 +2,7 @@ package com.zhu.ai.llm;
 
 import com.zhu.ai.kernel.observe.ObservePort;
 import com.zhu.ai.kernel.tool.ToolPort;
+import com.zhu.ai.tool.GuardedToolPort;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -68,23 +69,37 @@ public final class ToolCallingLoop {
                 return MAX_STEPS_MESSAGE;
             }
             messages.add(assistant);
-            messages.add(toolResponses(calls));
+            messages.add(applyToolCalls(calls));
         }
         log.warn("tool loop hit max steps {}", MAX_STEPS);
         return MAX_STEPS_MESSAGE;
     }
 
-    private ToolResponseMessage toolResponses(List<AssistantMessage.ToolCall> calls) {
-        markTools(calls.size());
+    /**
+     * 执行本轮 tool call：策略拦截只记 blocked，不计入 {@code toolCalls}；
+     * 真正执行才打 executed 并上报观测。
+     */
+    ToolResponseMessage applyToolCalls(List<AssistantMessage.ToolCall> calls) {
         List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>(calls.size());
         for (AssistantMessage.ToolCall call : calls) {
             String output = tools.execute(call.name(), call.arguments());
-            log.info(
-                    "tool executed name={} id={} args={} result={}",
-                    call.name(),
-                    call.id(),
-                    truncate(call.arguments()),
-                    truncate(output));
+            if (GuardedToolPort.isPolicyBlock(output)) {
+                log.info(
+                        "tool blocked name={} id={} args={} result={}",
+                        call.name(),
+                        call.id(),
+                        truncate(call.arguments()),
+                        truncate(output));
+                markBlocked(call.name());
+            } else {
+                log.info(
+                        "tool executed name={} id={} args={} result={}",
+                        call.name(),
+                        call.id(),
+                        truncate(call.arguments()),
+                        truncate(output));
+                markExecuted(call.name());
+            }
             responses.add(new ToolResponseMessage.ToolResponse(call.id(), call.name(), output));
         }
         return ToolResponseMessage.builder().responses(responses).build();
@@ -96,9 +111,15 @@ public final class ToolCallingLoop {
         }
     }
 
-    private void markTools(int count) {
+    private void markExecuted(String toolName) {
         if (observe != null) {
-            observe.markToolCalls(count);
+            observe.markToolExecuted(toolName);
+        }
+    }
+
+    private void markBlocked(String toolName) {
+        if (observe != null) {
+            observe.markToolBlocked(toolName);
         }
     }
 

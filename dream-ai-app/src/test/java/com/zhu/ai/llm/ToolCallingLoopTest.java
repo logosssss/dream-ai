@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.zhu.ai.observe.InMemoryObservePort;
+import com.zhu.ai.tool.GuardedToolPort;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -90,6 +91,35 @@ class ToolCallingLoopTest {
         var obs = observe.complete(true, null);
         assertEquals(2, obs.modelCalls());
         assertEquals(1, obs.toolCalls());
+        assertTrue(obs.blockedTools().isEmpty());
+        assertEquals(List.of("current_date_time"), obs.executedTools());
+    }
+
+    @Test
+    void countsOnlyExecutedToolsNotPolicyBlocks() {
+        AtomicInteger steps = new AtomicInteger();
+        InMemoryObservePort observe = new InMemoryObservePort();
+        observe.begin("s", "chat");
+        ToolCallingLoop loop = new ToolCallingLoop(
+                messages -> {
+                    int n = steps.incrementAndGet();
+                    if (n == 1) {
+                        return AssistantMessage.builder()
+                                .content("")
+                                .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                        "c1", "function", "web_search_prime", "{}")))
+                                .build();
+                    }
+                    return new AssistantMessage("blocked");
+                },
+                (name, args) -> GuardedToolPort.DENIED_PREFIX + " " + name,
+                observe);
+        assertEquals("blocked", loop.run(List.of(new UserMessage("天气"))));
+        var obs = observe.complete(true, null);
+        assertEquals(2, obs.modelCalls());
+        assertEquals(0, obs.toolCalls());
+        assertEquals(List.of("web_search_prime"), obs.blockedTools());
+        assertTrue(obs.executedTools().isEmpty());
     }
 
     @Test

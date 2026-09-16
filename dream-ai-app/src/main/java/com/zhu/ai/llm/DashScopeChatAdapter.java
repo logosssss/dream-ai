@@ -16,7 +16,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -92,11 +91,9 @@ public final class DashScopeChatAdapter implements ChatPort {
             if (i == ToolCallingLoop.MAX_STEPS - 1) {
                 return ToolCallingLoop.MAX_STEPS_MESSAGE;
             }
-            if (observe != null) {
-                observe.markToolCalls(calls.size());
-            }
             messages.add(assistant);
-            messages.add(toolResponses(calls));
+            // 与同步循环共用：blocked 不计 toolCalls，只有真正执行才记
+            messages.add(new ToolCallingLoop(m -> null, tools, observe).applyToolCalls(calls));
         }
         return ToolCallingLoop.MAX_STEPS_MESSAGE;
     }
@@ -174,15 +171,6 @@ public final class DashScopeChatAdapter implements ChatPort {
         }
         options.multiModel(resolveMultiModel(model));
         return options.build();
-    }
-
-    private ToolResponseMessage toolResponses(List<AssistantMessage.ToolCall> calls) {
-        List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>(calls.size());
-        for (AssistantMessage.ToolCall call : calls) {
-            String output = tools.execute(call.name(), call.arguments());
-            responses.add(new ToolResponseMessage.ToolResponse(call.id(), call.name(), output));
-        }
-        return ToolResponseMessage.builder().responses(responses).build();
     }
 
     /**

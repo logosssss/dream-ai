@@ -3,7 +3,9 @@ package com.zhu.ai.kernel.eval;
 import com.zhu.ai.kernel.observe.InvokeObservation;
 import com.zhu.ai.kernel.runtime.AgentInvokeResult;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 纯函数打分：把 Gateway 结果对照 {@link EvalExpect}。
@@ -22,6 +24,9 @@ public final class EvalScorer {
         Integer modelCalls = obs == null ? null : obs.modelCalls();
         Integer toolCalls = obs == null ? null : obs.toolCalls();
         Boolean success = obs == null ? null : obs.success();
+        String route = obs == null ? null : obs.route();
+        List<String> blocked = obs == null ? List.of() : obs.blockedTools();
+        List<String> executed = obs == null ? List.of() : obs.executedTools();
 
         if (expect.success() != null) {
             if (success == null) {
@@ -33,6 +38,13 @@ public final class EvalScorer {
         if (expect.agentId() != null && !expect.agentId().isBlank()) {
             if (agentId == null || !expect.agentId().equals(agentId)) {
                 failures.add("agentId expected " + expect.agentId() + " got " + agentId);
+            }
+        }
+        if (expect.route() != null) {
+            if (obs == null) {
+                failures.add("route expected " + expect.route() + " but observe missing");
+            } else if (!expect.route().equals(route == null ? "" : route)) {
+                failures.add("route expected " + expect.route() + " got " + route);
             }
         }
         for (String needle : expect.outputContains()) {
@@ -64,6 +76,30 @@ public final class EvalScorer {
                 failures.add("maxModelCalls=" + expect.maxModelCalls() + " but observe missing");
             } else if (modelCalls > expect.maxModelCalls()) {
                 failures.add("modelCalls " + modelCalls + " > max " + expect.maxModelCalls());
+            }
+        }
+        if (!expect.mustBlockTools().isEmpty()) {
+            if (obs == null) {
+                failures.add("mustBlockTools " + expect.mustBlockTools() + " but observe missing");
+            } else {
+                Set<String> blockedSet = new HashSet<>(blocked);
+                for (String name : expect.mustBlockTools()) {
+                    if (!blockedSet.contains(name)) {
+                        failures.add("blockedTools missing: " + name + " got " + blocked);
+                    }
+                }
+            }
+        }
+        if (!expect.mustExecuteTools().isEmpty()) {
+            if (obs == null) {
+                failures.add("mustExecuteTools " + expect.mustExecuteTools() + " but observe missing");
+            } else {
+                Set<String> executedSet = new HashSet<>(executed);
+                for (String name : expect.mustExecuteTools()) {
+                    if (!executedSet.contains(name)) {
+                        failures.add("executedTools missing: " + name + " got " + executed);
+                    }
+                }
             }
         }
 

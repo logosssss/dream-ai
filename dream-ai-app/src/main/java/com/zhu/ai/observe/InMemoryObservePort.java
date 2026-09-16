@@ -3,10 +3,13 @@ package com.zhu.ai.observe;
 import com.zhu.ai.kernel.observe.InvokeObservation;
 import com.zhu.ai.kernel.observe.ObservePort;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.MDC;
 
 /**
@@ -50,14 +53,49 @@ public final class InMemoryObservePort implements ObservePort {
     }
 
     @Override
+    public void markToolExecuted(String toolName) {
+        if (toolName == null || toolName.isBlank()) {
+            return;
+        }
+        Pending pending = current.get();
+        if (pending != null) {
+            pending.toolCalls.incrementAndGet();
+            pending.executedTools.add(toolName.trim());
+        }
+    }
+
+    @Override
+    public void markRoute(String route) {
+        if (route == null || route.isBlank()) {
+            return;
+        }
+        Pending pending = current.get();
+        if (pending != null) {
+            pending.route.set(route.trim());
+        }
+    }
+
+    @Override
+    public void markToolBlocked(String toolName) {
+        if (toolName == null || toolName.isBlank()) {
+            return;
+        }
+        Pending pending = current.get();
+        if (pending != null) {
+            pending.blockedTools.add(toolName.trim());
+        }
+    }
+
+    @Override
     public InvokeObservation complete(boolean success, String errorMessage) {
         Pending pending = current.get();
         current.remove();
         if (pending == null) {
             clearMdc();
-            return new InvokeObservation("", "", "", 0L, 0, 0, success, errorMessage);
+            return new InvokeObservation("", "", "", 0L, 0, 0, success, errorMessage, "", List.of(), List.of());
         }
         long durationMs = Math.max(0L, (System.nanoTime() - pending.startNanos) / 1_000_000L);
+        String route = pending.route.get();
         InvokeObservation observation = new InvokeObservation(
                 pending.traceId,
                 pending.sessionId,
@@ -66,7 +104,10 @@ public final class InMemoryObservePort implements ObservePort {
                 pending.modelCalls.get(),
                 pending.toolCalls.get(),
                 success,
-                errorMessage);
+                errorMessage,
+                route == null ? "" : route,
+                List.copyOf(pending.blockedTools),
+                List.copyOf(pending.executedTools));
         ring.addFirst(observation);
         while (ring.size() > CAPACITY) {
             ring.pollLast();
@@ -99,6 +140,9 @@ public final class InMemoryObservePort implements ObservePort {
         private final long startNanos;
         private final AtomicInteger modelCalls = new AtomicInteger();
         private final AtomicInteger toolCalls = new AtomicInteger();
+        private final AtomicReference<String> route = new AtomicReference<>("");
+        private final Set<String> blockedTools = new LinkedHashSet<>();
+        private final List<String> executedTools = new ArrayList<>();
 
         private Pending(String traceId, String sessionId, String agentId, long startNanos) {
             this.traceId = traceId;

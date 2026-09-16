@@ -88,11 +88,31 @@ class DreamAiApplicationTest {
                 .andExpect(jsonPath("$.traceId").isNotEmpty())
                 .andExpect(jsonPath("$.durationMs").isNumber())
                 .andExpect(jsonPath("$.modelCalls").value(0))
-                .andExpect(jsonPath("$.toolCalls").value(0));
+                .andExpect(jsonPath("$.toolCalls").value(0))
+                .andExpect(jsonPath("$.route").value(""))
+                .andExpect(jsonPath("$.blockedTools").isArray())
+                .andExpect(jsonPath("$.blockedTools.length()").value(0));
         mockMvc.perform(get("/api/observe?limit=5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].sessionId").value("obs-http"))
-                .andExpect(jsonPath("$[0].success").value(true));
+                .andExpect(jsonPath("$[0].success").value(true))
+                .andExpect(jsonPath("$[0].route").value(""))
+                .andExpect(jsonPath("$[0].blockedTools").isArray());
+    }
+
+    @Test
+    void graphInvokeRecordsRouteInObserve() throws Exception {
+        mockMvc.perform(post("/api/agent/invoke")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                "{\"agentId\":\"graph\",\"sessionId\":\"obs-graph\",\"input\":\"请审查这段代码有没有风险点\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.route").value("review"))
+                .andExpect(jsonPath("$.output").value(org.hamcrest.Matchers.containsString("[route=review]")));
+        mockMvc.perform(get("/api/observe?limit=1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].route").value("review"))
+                .andExpect(jsonPath("$[0].agentId").value("graph"));
     }
 
     @Test

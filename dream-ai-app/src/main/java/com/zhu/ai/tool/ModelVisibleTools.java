@@ -6,7 +6,7 @@ import org.springframework.ai.tool.ToolCallback;
 
 /**
  * 按 {@link ConfigurableToolPolicy#visibleToModel} 筛出声明给模型的工具 schema。
- * 白名单外的工具不进入 ChatModel options，模型看不见也就不会去调。
+ * 当前白名单只拦执行，不在此隐藏工具，避免模型侧直接 no tool call、看不到拦截过程。
  */
 public final class ModelVisibleTools {
 

@@ -5,7 +5,9 @@
   "expect": {
     "success": true,
     "agentId": "graph",
+    "route": "knowledge",
     "outputContains": ["[route=knowledge]"],
-    "outputNotContains": ["[route=chat]"]
+    "outputNotContains": ["[route=chat]", "[route=review]"],
+    "maxToolCalls": 0
   }
 }

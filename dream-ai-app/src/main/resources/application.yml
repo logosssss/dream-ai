@@ -75,10 +75,10 @@ dream:
     # SSE / ChatModel.stream 阻塞上限；超时走 503 TransientAiException
     timeout-ms: ${DREAM_STREAM_TIMEOUT_MS:120000}
   tools:
-    # 非空则仅名单内工具可声明给模型并执行；空 = 全部注册工具可用
-    allowlist: []
+    # 非空则仅名单内工具可执行（仍声明给模型，便于演示拦截）；空 = 不限制执行
+    allowlist: [datetime_offset,web_search_prime]
     # 需人工审批的工具；hitl-mode=enforce 时须带请求头 X-Dream-Tool-Approvals
-    require-approval: []
+    require-approval: [web_search_prime]
     # off=忽略审批名单；enforce=未批拒执；auto=审批名单自动放行（演示/测试）
     hitl-mode: ${DREAM_TOOLS_HITL_MODE:enforce}
   # 第 6 周 MCP Client：对接智谱 SSE（外部 Server），不自环本仓
