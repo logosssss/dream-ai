@@ -3,7 +3,8 @@ package com.zhu.ai.kernel.observe;
 import java.util.List;
 
 /**
- * 运行时观测端口。Gateway 开闭跨度；LLM/工具循环 / Graph 在同线程上报。
+ * 运行时观测能力契约（hexagonal Port，不是 HTTP/TCP 端口）。
+ * Gateway 开闭跨度；LLM/工具循环 / Graph 在同线程上报。
  * app 接到内存环缓冲 + 薄 {@code /api/observe}；不要在 8090 复活独立 Admin 控制面。
  */
 public interface ObservePort {

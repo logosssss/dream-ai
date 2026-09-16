@@ -33,4 +33,12 @@ class InMemoryMemoryPortTest {
         assertEquals(InMemoryMemoryPort.MAX_CHARS, port.recall("s1").length());
         assertTrue(port.recall("s1").endsWith("A: a\n") || port.recall("s1").contains("A: a"));
     }
+
+    @Test
+    void replaceNotesOverwrites() {
+        InMemoryMemoryPort port = new InMemoryMemoryPort();
+        port.rememberRound("s1", "old", "note");
+        port.replaceNotes("s1", "Summary:\n用户叫小明\n");
+        assertEquals("Summary:\n用户叫小明\n", port.recall("s1"));
+    }
 }

@@ -1,8 +1,8 @@
 package com.zhu.ai.kernel.tool;
 
 /**
- * 工具执行端口。实现与 {@code ToolCallback} 装配在 app；
- * 限步循环也在 app，Agent 不注入本端口。
+ * 工具执行能力契约（hexagonal Port，不是 HTTP/TCP 端口）。
+ * 实现与 {@code ToolCallback} 装配在 app；限步循环也在 app，Agent 不注入本契约。
  */
 public interface ToolPort {
 

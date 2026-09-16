@@ -30,6 +30,14 @@ public final class InMemoryMemoryPort implements MemoryPort {
         store.compute(memoryKey, (key, old) -> trim((old == null ? "" : old) + line(userInput, assistantOutput)));
     }
 
+    @Override
+    public void replaceNotes(String memoryKey, String notes) {
+        if (blank(memoryKey)) {
+            return;
+        }
+        store.put(memoryKey, trim(notes == null ? "" : notes));
+    }
+
     public static String line(String userInput, String assistantOutput) {
         return "U: " + nullToEmpty(userInput) + "\nA: " + nullToEmpty(assistantOutput) + "\n";
     }

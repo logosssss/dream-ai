@@ -3,8 +3,9 @@ package com.zhu.ai.kernel.knowledge;
 import java.util.List;
 
 /**
- * 检索端口。由 {@code dream-ai-knowledge} 实现；agents 只依赖本接口。
- * 由 {@link com.zhu.ai.kernel.runtime.AgentGateway} 在调用 Handler 前检索，Agent 不注入本端口。
+ * 检索能力契约（hexagonal Port，不是 HTTP/TCP 端口）。
+ * 由 {@code dream-ai-knowledge} 实现；agents 只依赖本接口。
+ * 由 {@link com.zhu.ai.kernel.runtime.AgentGateway} 在调用 Handler 前检索，Agent 不注入本契约。
  */
 public interface RetrievePort {
 

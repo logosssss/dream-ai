@@ -278,13 +278,13 @@ curl -s http://127.0.0.1:8090/api/agent/invoke \
 
 ### 3. RAG
 
-- 端口：`RetrievePort`（kernel）。  
+- 契约：`RetrievePort`（kernel）。  
 - 实现：pgvector VectorStore（app 装配；向量库与 MySQL 使用不同数据源）。  
 - Gateway 检索后交给 Agent，Agent 把片段写入 system 中的「参考资料」。
 
 ### 4. 观测
 
-- 端口：`ObservePort`；默认实现为进程内环缓冲，并配合 MDC `traceId`。  
+- 契约：`ObservePort`；默认实现为进程内环缓冲，并配合 MDC `traceId`。  
 - invoke 响应中携带本轮摘要；也可用 `/api/observe` 查询。  
 - 本仓库只提供轻量观测契约，不附带完整运营后台 UI。
 
@@ -347,7 +347,7 @@ dream-ai/
 ## 设计原则
 
 1. **先跑通主路径，再谈拆分** — 单进程验证网关 → Agent → 模型 / 工具 / 检索是否闭环。  
-2. **用 Port 挡变化** — kernel 不依赖 Web 与厂商 SDK；换模型或换存储时改 app 适配即可。  
+2. **用 Port 挡变化** — Port 是能力契约（不是 HTTP 端口）；kernel 不依赖 Web 与厂商 SDK；换模型或换存储时改 app 适配即可。  
 3. **HTTP 入口收敛** — 对外只暴露有限 API，业务扩展走 Agent，而不是到处加 Controller。  
 4. **少造空架子** — 不为「看起来像平台」预先拆出用不到的进程和模块。  
 5. **密钥不进仓库** — 本地覆盖文件与环境变量承载密码和 API Key。

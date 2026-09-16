@@ -12,7 +12,7 @@
 
     <artifactId>dream-ai-knowledge</artifactId>
     <name>dream-ai-knowledge</name>
-    <description>进程内 RAG。实现 kernel 检索端口，不作为独立 HTTP 服务。</description>
+    <description>进程内 RAG。实现 kernel 的 RetrievePort，不作为独立 HTTP 服务。</description>
 
     <dependencies>
         <dependency>

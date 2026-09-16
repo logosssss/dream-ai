@@ -1,7 +1,7 @@
 package com.zhu.ai.kernel.llm;
 
 /**
- * 对话模型端口（Hexagonal Port）。
+ * 对话模型能力契约（hexagonal Port，不是 HTTP/TCP 端口）。
  * <p>
  * agents 只依赖本接口；Spring AI {@code ChatClient} / DashScope 适配器放在 app。
  * 当前是同步补全；工具循环（限步）在 app 的 ChatPort 适配器里，不在 Agent 内。

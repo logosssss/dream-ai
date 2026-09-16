@@ -98,7 +98,7 @@ public final class SupervisorGraph implements GraphPort {
                     + "优先谈正确性、边界、安全与可维护性；没有足够上下文就明确说缺什么，不要编造实现细节。\n"
                     + "输出短条目，避免长篇空话。\n";
 
-    /** 叶节点共用的模型端口；本图不直接依赖 DashScope SDK。 */
+    /** 叶节点共用的 ChatPort；本图不直接依赖 DashScope SDK。 */
     private final ChatPort chatPort;
 
     public SupervisorGraph(ChatPort chatPort) {

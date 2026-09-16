@@ -10,6 +10,7 @@ import com.zhu.ai.kernel.memory.MemoryPort;
 import com.zhu.ai.kernel.observe.ObservePort;
 import com.zhu.ai.kernel.runtime.AgentGateway;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
@@ -32,8 +33,9 @@ public class AgentRuntimeConfig {
             ConversationPort conversation,
             MemoryPort memory,
             RetrievePort retrieve,
-            ObservePort observe) {
-        return new DefaultAgentGateway(registry, conversation, memory, retrieve, observe);
+            ObservePort observe,
+            ApplicationEventPublisher events) {
+        return new DefaultAgentGateway(registry, conversation, memory, retrieve, observe, events);
     }
 
     /** SSE 推送线程；虚拟线程避免占满 Tomcat 工作线程。 */

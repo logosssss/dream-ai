@@ -13,13 +13,17 @@ import com.zhu.ai.kernel.observe.ObservePort;
 import com.zhu.ai.kernel.runtime.AgentGateway;
 import com.zhu.ai.kernel.runtime.AgentInvokeRequest;
 import com.zhu.ai.kernel.runtime.AgentInvokeResult;
+import com.zhu.ai.memory.MemoryRoundRememberedEvent;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * {@link AgentGateway} 默认实现：分发 + 短会话 + 长期记忆 + 检索 + 观测。
- * Agent 不接触这些端口。
+ * Agent 不接触这些能力契约。
+ * <p>
+ * 记忆存储只走 {@link MemoryPort}；摘要由 {@link MemoryRoundRememberedEvent} 异步触发，不套装饰器。
  */
 public final class DefaultAgentGateway implements AgentGateway {
 
@@ -34,6 +38,7 @@ public final class DefaultAgentGateway implements AgentGateway {
     private final MemoryPort memory;
     private final RetrievePort retrieve;
     private final ObservePort observe;
+    private final ApplicationEventPublisher events;
 
     public DefaultAgentGateway(
             AgentRegistry registry,
@@ -41,11 +46,22 @@ public final class DefaultAgentGateway implements AgentGateway {
             MemoryPort memory,
             RetrievePort retrieve,
             ObservePort observe) {
+        this(registry, conversation, memory, retrieve, observe, null);
+    }
+
+    public DefaultAgentGateway(
+            AgentRegistry registry,
+            ConversationPort conversation,
+            MemoryPort memory,
+            RetrievePort retrieve,
+            ObservePort observe,
+            ApplicationEventPublisher events) {
         this.registry = registry;
         this.conversation = conversation;
         this.memory = memory;
         this.retrieve = retrieve;
         this.observe = observe;
+        this.events = events;
     }
 
     @Override
@@ -106,10 +122,11 @@ public final class DefaultAgentGateway implements AgentGateway {
                 agentId, sessionId, input, history, memoryNotes, String.join("\n---\n", hits));
     }
 
-    /** 成功后写短会话 + 长期记忆，并挂上观测摘要。 */
+    /** 成功后写短会话 + 长期记忆，发摘要事件，并挂上观测摘要。 */
     private AgentInvokeResult persistSuccess(String sessionId, String input, AgentInvokeResult result) {
         conversation.appendRound(sessionId, input, result.output());
         memory.rememberRound(sessionId, input, result.output());
+        publishMemoryRemembered(sessionId);
         InvokeObservation observation = observe.complete(true, null);
         log.info(
                 "gateway store traceId={} session={} outputChars={} durationMs={} modelCalls={} toolCalls={} route={} blockedTools={}",
@@ -122,6 +139,13 @@ public final class DefaultAgentGateway implements AgentGateway {
                 observation.route(),
                 observation.blockedTools());
         return new AgentInvokeResult(result.agentId(), result.output(), observation);
+    }
+
+    private void publishMemoryRemembered(String sessionId) {
+        if (events == null || sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        events.publishEvent(new MemoryRoundRememberedEvent(sessionId));
     }
 
     private void fail(String sessionId, RuntimeException ex) {

@@ -12,7 +12,7 @@
 
     <artifactId>dream-ai-kernel</artifactId>
     <name>dream-ai-kernel</name>
-    <description>LLM / Memory / Conversation / Tool / Graph / Observe 端口。无 Web、无厂商 SDK。</description>
+    <description>LLM / Memory / Conversation / Tool / Graph / Observe 能力契约（Port）。无 Web、无厂商 SDK。</description>
 
     <dependencies>
         <dependency>

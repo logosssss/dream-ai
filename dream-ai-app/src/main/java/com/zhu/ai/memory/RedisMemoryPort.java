@@ -39,6 +39,14 @@ public final class RedisMemoryPort implements MemoryPort {
         redis.opsForValue().set(key, merged, TTL);
     }
 
+    @Override
+    public void replaceNotes(String memoryKey, String notes) {
+        if (blank(memoryKey)) {
+            return;
+        }
+        redis.opsForValue().set(KEY_PREFIX + memoryKey, InMemoryMemoryPort.trim(notes == null ? "" : notes), TTL);
+    }
+
     private static boolean blank(String memoryKey) {
         return memoryKey == null || memoryKey.isBlank();
     }

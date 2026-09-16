@@ -63,7 +63,7 @@ public class PortsConfig {
     MemoryPort memoryPort(ObjectProvider<StringRedisTemplate> redis) {
         StringRedisTemplate template = redis.getIfAvailable();
         if (template != null) {
-            log.info("MemoryPort: RedisMemoryPort");
+            log.info("MemoryPort: RedisMemoryPort (summarize via async event if MemorySummarizer present)");
             return new RedisMemoryPort(template);
         }
         log.info("MemoryPort: InMemoryMemoryPort (no StringRedisTemplate)");
