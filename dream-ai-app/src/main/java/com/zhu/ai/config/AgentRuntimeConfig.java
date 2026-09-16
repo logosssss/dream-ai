@@ -34,8 +34,10 @@ public class AgentRuntimeConfig {
             MemoryPort memory,
             RetrievePort retrieve,
             ObservePort observe,
-            ApplicationEventPublisher events) {
-        return new DefaultAgentGateway(registry, conversation, memory, retrieve, observe, events);
+            ApplicationEventPublisher events,
+            RagProperties rag) {
+        return new DefaultAgentGateway(
+                registry, conversation, memory, retrieve, observe, events, rag.normalizedTopK());
     }
 
     /** SSE 推送线程；虚拟线程避免占满 Tomcat 工作线程。 */

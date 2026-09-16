@@ -85,12 +85,17 @@ public final class SupervisorGraph implements GraphPort {
     public static final String N_REVIEW = "review";
 
     /**
-     * knowledge 叶专用 system：比 ChatAgent 更强调「只信参考资料」。
-     * 路由到此叶时，即使 Gateway 也塞了 retrieve，模型仍被明确约束「没有就说不足」。
+     * knowledge 叶：无检索命中则短路拒答，不调模型——RAG 不是「检索了就算」。
      */
+    public static final String NO_HIT_REPLY = "资料不足，无法根据知识库作答。";
+
+    /** 模型没写编号时补上，与 prompt {@code [1]} 对齐。 */
+    static final String CITATION_FALLBACK = "\n依据：[1]";
+
     private static final String KNOWLEDGE_SYSTEM =
             "你是知识问答助手，用简洁中文回答。\n"
                     + "优先依据「参考资料」作答；参考资料为空或不够就明确说资料不足，不要编造。\n"
+                    + "回答中必须点名引用编号，例如 [1] 或 [2]。\n"
                     + "不要把时效新闻、天气、股价当成仓库知识。\n";
 
     /**
@@ -236,9 +241,20 @@ public final class SupervisorGraph implements GraphPort {
         String input = String.valueOf(state.value(SupervisorKeys.INPUT, ""));
         String memory = String.valueOf(state.value(SupervisorKeys.MEMORY, ""));
         String retrieved = String.valueOf(state.value(SupervisorKeys.RETRIEVED, ""));
+        if (retrieved.isBlank()) {
+            log.info("knowledge leaf refuse: no retrieve hits");
+            if (sink != null && !sink.cancelled()) {
+                sink.onDelta(NO_HIT_REPLY);
+            }
+            return leafResult("", NO_HIT_REPLY);
+        }
         String model = resolveAndMark(ModelRouter.KNOWLEDGE);
         String output = invokeLeaf(model, input, knowledgeSystem(memory, retrieved), history, sink);
-        return leafResult(model, output);
+        String cited = ensureCitations(output, retrieved);
+        if (sink != null && !sink.cancelled() && cited.length() > (output == null ? 0 : output.length())) {
+            sink.onDelta(cited.substring(output == null ? 0 : output.length()));
+        }
+        return leafResult(model, cited);
     }
 
     private Map<String, Object> reviewLeaf(
@@ -280,6 +296,17 @@ public final class SupervisorGraph implements GraphPort {
             observe.markModel(model);
         }
         return model;
+    }
+
+    static String ensureCitations(String output, String retrievedContext) {
+        String out = output == null ? "" : output;
+        if (retrievedContext == null || !retrievedContext.contains("[1]")) {
+            return out;
+        }
+        if (out.contains("[1]")) {
+            return out;
+        }
+        return out + CITATION_FALLBACK;
     }
 
     static String knowledgeSystem(String memoryNotes, String retrievedContext) {

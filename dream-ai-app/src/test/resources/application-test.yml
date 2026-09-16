@@ -46,3 +46,9 @@ dream:
       enabled: false
   tools:
     hitl-mode: auto
+  rag:
+    top-k: 3
+    min-score: 0.0
+    doc-type: ""
+    hybrid-alpha: 0.6
+    rerank: true

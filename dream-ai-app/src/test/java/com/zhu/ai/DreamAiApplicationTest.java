@@ -40,7 +40,8 @@ class DreamAiApplicationTest {
                         .content("{\"agentId\":\"chat\",\"sessionId\":\"t-hello\",\"input\":\"你好\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.agentId").value("chat"))
-                .andExpect(jsonPath("$.output").value("stub:0:n:n:你好"));
+                .andExpect(jsonPath("$.output").value("stub:0:n:n:你好"))
+                .andExpect(jsonPath("$.retrieveHits").value(0));
     }
 
     @Test
@@ -76,7 +77,10 @@ class DreamAiApplicationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"agentId\":\"chat\",\"sessionId\":\"rag-http\",\"input\":\"什么是 AgentGateway\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.output").value("stub:0:n:r:什么是 AgentGateway"));
+                .andExpect(jsonPath("$.output").value("stub:0:n:r:什么是 AgentGateway"))
+                .andExpect(jsonPath("$.retrieveHits").value(org.hamcrest.Matchers.greaterThan(0)))
+                .andExpect(jsonPath("$.retrieveHitSummaries[0].id").isNotEmpty())
+                .andExpect(jsonPath("$.retrieveHitSummaries[0].score").isNumber());
     }
 
     @Test
@@ -117,6 +121,19 @@ class DreamAiApplicationTest {
                 .andExpect(jsonPath("$[0].route").value("review"))
                 .andExpect(jsonPath("$[0].model").value("qwen3.8-27b"))
                 .andExpect(jsonPath("$[0].agentId").value("graph"));
+    }
+
+    @Test
+    void graphKnowledgeNoHitRefusesWithoutModel() throws Exception {
+        mockMvc.perform(post("/api/agent/invoke")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(
+                                "{\"agentId\":\"graph\",\"sessionId\":\"rag-miss\",\"input\":\"请用知识库回答量子纠缠是什么\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.route").value("knowledge"))
+                .andExpect(jsonPath("$.modelCalls").value(0))
+                .andExpect(jsonPath("$.retrieveHits").value(0))
+                .andExpect(jsonPath("$.output").value(org.hamcrest.Matchers.containsString("资料不足")));
     }
 
     @Test

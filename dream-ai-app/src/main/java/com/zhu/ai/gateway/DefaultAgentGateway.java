@@ -4,6 +4,9 @@ import com.zhu.ai.kernel.agent.AgentHandler;
 import com.zhu.ai.kernel.agent.AgentRegistry;
 import com.zhu.ai.kernel.conversation.ConversationPort;
 import com.zhu.ai.kernel.conversation.ConversationTurn;
+import com.zhu.ai.kernel.knowledge.RetrieveCitations;
+import com.zhu.ai.kernel.knowledge.RetrieveHit;
+import com.zhu.ai.kernel.knowledge.RetrieveHitSummary;
 import com.zhu.ai.kernel.knowledge.RetrievePort;
 import com.zhu.ai.kernel.llm.StreamCancelledException;
 import com.zhu.ai.kernel.llm.TokenSink;
@@ -21,9 +24,10 @@ import org.springframework.context.ApplicationEventPublisher;
 
 /**
  * {@link AgentGateway} 默认实现：分发 + 短会话 + 长期记忆 + 检索 + 观测。
- * Agent 不接触这些能力契约。
+ * Agent 不接触这些能力契约，也不注入 VectorStore。
  * <p>
  * 记忆存储只走 {@link MemoryPort}；摘要由 {@link MemoryRoundRememberedEvent} 异步触发，不套装饰器。
+ * RAG：仅知识意图 {@link RetrievePolicy} 才 retrieve；命中由 {@link RetrieveCitations} 编成 {@code [1]} 引用。
  */
 public final class DefaultAgentGateway implements AgentGateway {
 
@@ -31,14 +35,13 @@ public final class DefaultAgentGateway implements AgentGateway {
 
     public static final String DEFAULT_AGENT_ID = "chat";
 
-    static final int RETRIEVE_TOP_K = 3;
-
     private final AgentRegistry registry;
     private final ConversationPort conversation;
     private final MemoryPort memory;
     private final RetrievePort retrieve;
     private final ObservePort observe;
     private final ApplicationEventPublisher events;
+    private final int retrieveTopK;
 
     public DefaultAgentGateway(
             AgentRegistry registry,
@@ -46,7 +49,7 @@ public final class DefaultAgentGateway implements AgentGateway {
             MemoryPort memory,
             RetrievePort retrieve,
             ObservePort observe) {
-        this(registry, conversation, memory, retrieve, observe, null);
+        this(registry, conversation, memory, retrieve, observe, null, 3);
     }
 
     public DefaultAgentGateway(
@@ -56,22 +59,34 @@ public final class DefaultAgentGateway implements AgentGateway {
             RetrievePort retrieve,
             ObservePort observe,
             ApplicationEventPublisher events) {
+        this(registry, conversation, memory, retrieve, observe, events, 3);
+    }
+
+    public DefaultAgentGateway(
+            AgentRegistry registry,
+            ConversationPort conversation,
+            MemoryPort memory,
+            RetrievePort retrieve,
+            ObservePort observe,
+            ApplicationEventPublisher events,
+            int retrieveTopK) {
         this.registry = registry;
         this.conversation = conversation;
         this.memory = memory;
         this.retrieve = retrieve;
         this.observe = observe;
         this.events = events;
+        this.retrieveTopK = retrieveTopK <= 0 ? 3 : retrieveTopK;
     }
 
     @Override
     public AgentInvokeResult invoke(AgentInvokeRequest request) {
-        return run(request, AgentHandler::handle);
+        return run(request, AgentHandler::handle, null);
     }
 
     @Override
     public AgentInvokeResult invokeStream(AgentInvokeRequest request, TokenSink sink) {
-        return run(request, (handler, loaded) -> handler.handleStream(loaded, sink));
+        return run(request, (handler, loaded) -> handler.handleStream(loaded, sink), sink);
     }
 
     @FunctionalInterface
@@ -79,13 +94,13 @@ public final class DefaultAgentGateway implements AgentGateway {
         AgentInvokeResult apply(AgentHandler handler, AgentInvokeRequest loaded);
     }
 
-    private AgentInvokeResult run(AgentInvokeRequest request, HandleFn handle) {
+    private AgentInvokeResult run(AgentInvokeRequest request, HandleFn handle, TokenSink sink) {
         String agentId = resolveAgentId(request.agentId());
         AgentHandler handler = requireHandler(agentId);
         String sessionId = request.sessionId();
         String traceId = observe.begin(sessionId, agentId);
         try {
-            AgentInvokeRequest loaded = loadContext(traceId, agentId, sessionId, request.input());
+            AgentInvokeRequest loaded = loadContext(traceId, agentId, sessionId, request.input(), sink);
             AgentInvokeResult result = handle.apply(handler, loaded);
             return persistSuccess(sessionId, request.input(), result);
         } catch (StreamCancelledException ex) {
@@ -106,11 +121,19 @@ public final class DefaultAgentGateway implements AgentGateway {
                 .orElseThrow(() -> new IllegalArgumentException("unknown agent: " + agentId));
     }
 
-    /** 装 history / memory / retrieve，供 Agent 消费；不改会话存储。 */
-    private AgentInvokeRequest loadContext(String traceId, String agentId, String sessionId, String input) {
+    /** 装 history / memory / retrieve，供 Agent 消费；不改会话存储。闲聊不打检索。 */
+    private AgentInvokeRequest loadContext(
+            String traceId, String agentId, String sessionId, String input, TokenSink sink) {
         List<ConversationTurn> history = conversation.history(sessionId);
         String memoryNotes = memory.recall(sessionId);
-        List<String> hits = retrieve.retrieve(input, RETRIEVE_TOP_K);
+        List<RetrieveHit> hits = RetrievePolicy.shouldRetrieve(input)
+                ? retrieve.retrieve(input, retrieveTopK)
+                : List.of();
+        List<RetrieveHitSummary> summaries = hits.stream().map(RetrieveHit::summary).toList();
+        observe.markRetrieveHits(summaries);
+        if (sink != null && !sink.cancelled() && !summaries.isEmpty()) {
+            sink.onRetrieve(summaries);
+        }
         log.info(
                 "gateway load traceId={} session={} historyTurns={} memoryChars={} retrieveHits={}",
                 traceId,
@@ -119,7 +142,7 @@ public final class DefaultAgentGateway implements AgentGateway {
                 memoryNotes.length(),
                 hits.size());
         return new AgentInvokeRequest(
-                agentId, sessionId, input, history, memoryNotes, String.join("\n---\n", hits));
+                agentId, sessionId, input, history, memoryNotes, RetrieveCitations.format(hits));
     }
 
     /** 成功后写短会话 + 长期记忆，发摘要事件，并挂上观测摘要。 */

@@ -6,8 +6,9 @@
     "success": true,
     "agentId": "graph",
     "route": "knowledge",
-    "outputContains": ["[route=knowledge]"],
-    "outputNotContains": ["[route=chat]", "[route=review]"],
-    "maxToolCalls": 0
+    "outputContains": ["[route=knowledge]", "[1]"],
+    "outputNotContains": ["[route=chat]", "[route=review]", "资料不足"],
+    "maxToolCalls": 0,
+    "minRetrieveHits": 1
   }
 }

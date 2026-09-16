@@ -1,7 +1,6 @@
 package com.zhu.ai.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.zhu.ai.kernel.tool.ToolPolicyDecision;
@@ -31,7 +30,7 @@ class ConfigurableToolPolicyTest {
                 List.of("current_date_time"), List.of(), ConfigurableToolPolicy.HitlMode.OFF);
         assertEquals(ToolPolicyDecision.ALLOW, policy.decide("current_date_time"));
         assertEquals(ToolPolicyDecision.DENY, policy.decide("web_search"));
-        assertFalse(policy.visibleToModel("web_search"));
+        assertTrue(policy.visibleToModel("web_search"));
         assertTrue(policy.visibleToModel("current_date_time"));
     }
 

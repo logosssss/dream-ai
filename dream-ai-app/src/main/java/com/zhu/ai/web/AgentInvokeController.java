@@ -1,5 +1,6 @@
 package com.zhu.ai.web;
 
+import com.zhu.ai.kernel.knowledge.RetrieveHitSummary;
 import com.zhu.ai.kernel.llm.StreamCancelledException;
 import com.zhu.ai.kernel.llm.TokenSink;
 import com.zhu.ai.kernel.runtime.AgentGateway;
@@ -7,6 +8,7 @@ import com.zhu.ai.kernel.runtime.AgentInvokeResult;
 import com.zhu.ai.tool.ToolApprovalContext;
 import java.io.IOException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,7 +64,8 @@ public class AgentInvokeController {
     /**
      * SSE 事件：
      * <ul>
-     *   <li>{@code route} — Graph 选中叶，data 为 {@code {"route":"review"}}</li>
+     *   <li>{@code retrieve} — 检索摘要（id/score/source），与 prompt {@code [1]} 对照</li>
+ *   <li>{@code route} — Graph 选中叶，data 为 {@code {"route":"review"}}</li>
      *   <li>{@code model} — 本轮选用模型，data 为 {@code {"model":"qwen-turbo"}}</li>
      *   <li>{@code tool_start} / {@code tool_blocked} / {@code tool_executed} — 工具生命周期</li>
      *   <li>{@code delta} — 文本增量</li>
@@ -94,6 +97,11 @@ public class AgentInvokeController {
                 @Override
                 public void onDelta(String delta) {
                     sendNamed(emitter, cancelled, "delta", delta);
+                }
+
+                @Override
+                public void onRetrieve(List<RetrieveHitSummary> hits) {
+                    sendNamed(emitter, cancelled, "retrieve", hits);
                 }
 
                 @Override

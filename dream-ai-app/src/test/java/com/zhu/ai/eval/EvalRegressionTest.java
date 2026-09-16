@@ -34,7 +34,7 @@ class EvalRegressionTest {
     @Test
     void goldenSuiteAllPassesWithStubChat() {
         EvalSuiteResult suite = runner.runAll();
-        assertEquals(4, suite.total());
+        assertEquals(5, suite.total());
         assertTrue(suite.allPassed(), () -> "failures=" + suite.results());
     }
 
@@ -42,14 +42,14 @@ class EvalRegressionTest {
     void httpListsAndRunsSuite() throws Exception {
         mockMvc.perform(get("/api/eval/cases"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(4))
+                .andExpect(jsonPath("$.length()").value(5))
                 .andExpect(jsonPath("$[0].id").value("chat-hello"));
 
         mockMvc.perform(post("/api/eval/run"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.total").value(4))
+                .andExpect(jsonPath("$.total").value(5))
                 .andExpect(jsonPath("$.failed").value(0))
-                .andExpect(jsonPath("$.passed").value(4));
+                .andExpect(jsonPath("$.passed").value(5));
     }
 
     @TestConfiguration

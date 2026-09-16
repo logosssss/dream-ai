@@ -78,6 +78,17 @@ dream:
     # 超过软上限则 LLM 摘要写回；硬上限仍见 InMemoryMemoryPort.MAX_CHARS
     soft-max-chars: ${DREAM_MEMORY_SOFT_MAX_CHARS:3000}
     summary-target-chars: ${DREAM_MEMORY_SUMMARY_TARGET_CHARS:1200}
+  rag:
+    # 最多几条命中编进 [1] [2] …；调大召回升、噪声升
+    top-k: ${DREAM_RAG_TOP_K:3}
+    # [0,1]：pgvector similarityThreshold；内存实现为命中词数/查询词数。调低门槛更吵
+    min-score: ${DREAM_RAG_MIN_SCORE:0.0}
+    # 非空则只保留该 docType；空 = 不过滤
+    doc-type: ${DREAM_RAG_DOC_TYPE:}
+    # 混合检索中向量分权重；无 pgvector 时忽略
+    hybrid-alpha: ${DREAM_RAG_HYBRID_ALPHA:0.6}
+    # 召回加宽后按关键词重叠 + 长度再排
+    rerank: ${DREAM_RAG_RERANK:true}
   # 按任务选模型；空 = 用 spring.ai.dashscope.chat.options.model
   models:
     default: ${DREAM_MODEL_DEFAULT:deepseek-v4-pro}

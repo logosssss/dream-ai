@@ -1,0 +1,15 @@
+{
+  "id": "graph-knowledge-miss",
+  "agentId": "graph",
+  "input": "请用知识库回答量子纠缠是什么",
+  "expect": {
+    "success": true,
+    "agentId": "graph",
+    "route": "knowledge",
+    "outputContains": ["[route=knowledge]", "资料不足"],
+    "outputNotContains": ["[route=chat]", "[route=review]"],
+    "maxToolCalls": 0,
+    "maxModelCalls": 0,
+    "maxRetrieveHits": 0
+  }
+}

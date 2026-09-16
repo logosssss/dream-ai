@@ -3,6 +3,7 @@ package com.zhu.ai.observe;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.zhu.ai.kernel.knowledge.RetrieveHitSummary;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,7 @@ class InMemoryObservePortTest {
         observe.markToolBlocked("web_search_prime");
         observe.markToolBlocked("web_search_prime");
         observe.markToolExecuted("datetime_offset");
+        observe.markRetrieveHits(List.of(new RetrieveHitSummary("kw-1", 0.5, "in-memory")));
 
         var obs = observe.complete(true, null);
         assertEquals("review", obs.route());
@@ -26,6 +28,8 @@ class InMemoryObservePortTest {
         assertEquals(List.of("datetime_offset"), obs.executedTools());
         assertEquals(1, obs.modelCalls());
         assertEquals(1, obs.toolCalls());
+        assertEquals(1, obs.retrieveHits().size());
+        assertEquals("kw-1", obs.retrieveHits().getFirst().id());
         assertTrue(obs.success());
         assertEquals(obs.traceId(), observe.recent(1).getFirst().traceId());
     }

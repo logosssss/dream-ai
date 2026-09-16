@@ -2,8 +2,10 @@ package com.zhu.ai.config;
 
 import com.zhu.ai.conversation.InMemoryConversationPort;
 import com.zhu.ai.conversation.MyBatisConversationPort;
+import com.zhu.ai.knowledge.HybridRetrievePort;
 import com.zhu.ai.knowledge.InMemoryKeywordIndex;
 import com.zhu.ai.knowledge.PgVectorRetrievePort;
+import com.zhu.ai.knowledge.RetrievePipeline;
 import com.zhu.ai.kernel.conversation.ConversationPort;
 import com.zhu.ai.kernel.knowledge.RetrievePort;
 import com.zhu.ai.kernel.memory.MemoryPort;
@@ -26,6 +28,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -41,6 +44,8 @@ public class PortsConfig {
     static final String INTRO_RESOURCE = "/rag/intro.txt";
 
     static final String VECTOR_TABLE = "vector_store";
+
+    static final String INTRO_DOC_TYPE = "intro";
 
     private static final Logger log = LoggerFactory.getLogger(PortsConfig.class);
 
@@ -73,19 +78,34 @@ public class PortsConfig {
     // --- 检索 ---
 
     @Bean
+    @ConfigurationProperties(prefix = "dream.rag")
+    RagProperties ragProperties() {
+        return new RagProperties();
+    }
+
+    @Bean
     RetrievePort retrievePort(
             ObjectProvider<VectorStore> stores,
-            @Qualifier("vectorJdbcTemplate") ObjectProvider<JdbcTemplate> vectorJdbc) {
+            @Qualifier("vectorJdbcTemplate") ObjectProvider<JdbcTemplate> vectorJdbc,
+            RagProperties rag) {
+        double minScore = rag.normalizedMinScore();
+        InMemoryKeywordIndex lexical = new InMemoryKeywordIndex(minScore);
+        lexical.ingest(readIntro(), "classpath:" + INTRO_RESOURCE, INTRO_DOC_TYPE);
+        RetrievePort inner;
         VectorStore store = stores.getIfAvailable();
         if (store != null) {
             ingestIntro(store, vectorJdbc.getIfAvailable());
-            log.info("RetrievePort: PgVectorRetrievePort");
-            return new PgVectorRetrievePort(store);
+            RetrievePort dense = new PgVectorRetrievePort(store, minScore);
+            inner = new HybridRetrievePort(lexical, dense, rag.normalizedHybridAlpha());
+            log.info(
+                    "RetrievePort: Hybrid(keyword+pgvector) minScore={} alpha={}",
+                    minScore,
+                    rag.normalizedHybridAlpha());
+        } else {
+            inner = lexical;
+            log.info("RetrievePort: InMemoryKeywordIndex minScore={} (no VectorStore)", minScore);
         }
-        InMemoryKeywordIndex index = new InMemoryKeywordIndex();
-        index.ingest(readIntro());
-        log.info("RetrievePort: InMemoryKeywordIndex (no VectorStore)");
-        return index;
+        return new RetrievePipeline(inner, rag.normalizedDocType(), rag.isRerank());
     }
 
     // --- 观测 ---
@@ -110,7 +130,13 @@ public class PortsConfig {
             docs.add(new Document(
                     UUID.randomUUID().toString(),
                     chunks.get(i),
-                    Map.of("source", "classpath:" + INTRO_RESOURCE, "chunk", String.valueOf(i))));
+                    Map.of(
+                            "source",
+                            "classpath:" + INTRO_RESOURCE,
+                            "chunk",
+                            String.valueOf(i),
+                            "docType",
+                            INTRO_DOC_TYPE)));
         }
         store.add(docs);
         log.info("pgvector ingested chunks={}", docs.size());

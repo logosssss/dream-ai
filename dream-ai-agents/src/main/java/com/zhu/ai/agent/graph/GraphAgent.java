@@ -4,10 +4,12 @@ import com.zhu.ai.kernel.agent.AgentHandler;
 import com.zhu.ai.kernel.graph.GraphPort;
 import com.zhu.ai.kernel.graph.GraphRunRequest;
 import com.zhu.ai.kernel.graph.GraphRunResult;
+import com.zhu.ai.kernel.knowledge.RetrieveHitSummary;
 import com.zhu.ai.kernel.llm.TokenSink;
 import com.zhu.ai.kernel.observe.ObservePort;
 import com.zhu.ai.kernel.runtime.AgentInvokeRequest;
 import com.zhu.ai.kernel.runtime.AgentInvokeResult;
+import java.util.List;
 import org.springframework.stereotype.Component;
 
 /**
@@ -111,6 +113,11 @@ public class GraphAgent implements AgentHandler {
             @Override
             public void onToolExecuted(String toolName) {
                 sink.onToolExecuted(toolName);
+            }
+
+            @Override
+            public void onRetrieve(List<RetrieveHitSummary> hits) {
+                sink.onRetrieve(hits);
             }
 
             @Override

@@ -8,6 +8,7 @@ import com.zhu.ai.kernel.eval.EvalCase;
 import com.zhu.ai.kernel.eval.EvalCaseResult;
 import com.zhu.ai.kernel.eval.EvalExpect;
 import com.zhu.ai.kernel.eval.EvalScorer;
+import com.zhu.ai.kernel.knowledge.RetrieveHitSummary;
 import com.zhu.ai.kernel.observe.InvokeObservation;
 import com.zhu.ai.kernel.runtime.AgentInvokeResult;
 import java.util.List;
@@ -122,6 +123,55 @@ class EvalScorerTest {
                 "[route=chat]\nx",
                 new InvokeObservation("t", "s", "graph", 1, 1, 0, true, null, "chat", "", List.of(), List.of()));
         assertTrue(EvalScorer.score(c, wrong).failures().stream().anyMatch(f -> f.contains("route expected review")));
+    }
+
+    @Test
+    void assertsRetrieveHitCounts() {
+        EvalCase c = new EvalCase(
+                "rag",
+                "graph",
+                null,
+                "x",
+                new EvalExpect(
+                        true,
+                        "graph",
+                        List.of("[1]"),
+                        null,
+                        null,
+                        null,
+                        null,
+                        "knowledge",
+                        null,
+                        null,
+                        1,
+                        null));
+        AgentInvokeResult pass = new AgentInvokeResult(
+                "graph",
+                "[route=knowledge]\n依据：[1]",
+                new InvokeObservation(
+                        "t",
+                        "s",
+                        "graph",
+                        1,
+                        1,
+                        0,
+                        true,
+                        null,
+                        "knowledge",
+                        "",
+                        List.of(),
+                        List.of(),
+                        List.of(new RetrieveHitSummary("kw-1", 0.8, "intro"))));
+        assertTrue(EvalScorer.score(c, pass).passed());
+
+        AgentInvokeResult miss = new AgentInvokeResult(
+                "graph",
+                "[route=knowledge]\n资料不足",
+                new InvokeObservation(
+                        "t", "s", "graph", 1, 0, 0, true, null, "knowledge", "", List.of(), List.of()));
+        EvalCaseResult scored = EvalScorer.score(c, miss);
+        assertFalse(scored.passed());
+        assertTrue(scored.failures().stream().anyMatch(f -> f.contains("retrieveHits")));
     }
 
     @Test

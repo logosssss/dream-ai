@@ -1,5 +1,6 @@
 package com.zhu.ai.kernel.observe;
 
+import com.zhu.ai.kernel.knowledge.RetrieveHitSummary;
 import java.util.List;
 
 /**
@@ -28,6 +29,9 @@ public interface ObservePort {
 
     /** 记录被策略拦截的工具名（不计入 toolCalls / executedTools）。 */
     void markToolBlocked(String toolName);
+
+    /** 记录本轮检索命中摘要（id/score/source）；无命中可不调。 */
+    default void markRetrieveHits(List<RetrieveHitSummary> hits) {}
 
     /** 结束跨度并入库；无 begin 时返回空观测。 */
     InvokeObservation complete(boolean success, String errorMessage);

@@ -102,6 +102,21 @@ public final class EvalScorer {
                 }
             }
         }
+        Integer retrieveHits = obs == null ? null : obs.retrieveHits().size();
+        if (expect.minRetrieveHits() != null) {
+            if (retrieveHits == null) {
+                failures.add("minRetrieveHits=" + expect.minRetrieveHits() + " but observe missing");
+            } else if (retrieveHits < expect.minRetrieveHits()) {
+                failures.add("retrieveHits " + retrieveHits + " < min " + expect.minRetrieveHits());
+            }
+        }
+        if (expect.maxRetrieveHits() != null) {
+            if (retrieveHits == null) {
+                failures.add("maxRetrieveHits=" + expect.maxRetrieveHits() + " but observe missing");
+            } else if (retrieveHits > expect.maxRetrieveHits()) {
+                failures.add("retrieveHits " + retrieveHits + " > max " + expect.maxRetrieveHits());
+            }
+        }
 
         return new EvalCaseResult(
                 evalCase.id(), failures.isEmpty(), failures, agentId, output, modelCalls, toolCalls, success);

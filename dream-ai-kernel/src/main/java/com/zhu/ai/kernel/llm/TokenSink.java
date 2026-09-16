@@ -1,5 +1,8 @@
 package com.zhu.ai.kernel.llm;
 
+import com.zhu.ai.kernel.knowledge.RetrieveHitSummary;
+import java.util.List;
+
 /**
  * 流式补全与编排生命周期出口。HTTP SSE 适配器实现本接口；Agent / ChatPort 不依赖 Servlet。
  * <p>
@@ -25,6 +28,11 @@ public interface TokenSink {
 
     /** 工具执行成功（与观测 {@code executedTools} 对齐）。 */
     default void onToolExecuted(String toolName) {}
+
+    /**
+     * 本轮检索摘要（与 prompt {@code [1]} 顺序一致）。Gateway 在进 Handler 前上报。
+     */
+    default void onRetrieve(List<RetrieveHitSummary> hits) {}
 
     /** 客户端断开或超时后为 true；ChatPort 应尽快停。 */
     default boolean cancelled() {

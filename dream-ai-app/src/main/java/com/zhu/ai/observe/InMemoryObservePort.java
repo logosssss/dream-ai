@@ -1,5 +1,6 @@
 package com.zhu.ai.observe;
 
+import com.zhu.ai.kernel.knowledge.RetrieveHitSummary;
 import com.zhu.ai.kernel.observe.InvokeObservation;
 import com.zhu.ai.kernel.observe.ObservePort;
 import java.util.ArrayList;
@@ -98,6 +99,16 @@ public final class InMemoryObservePort implements ObservePort {
     }
 
     @Override
+    public void markRetrieveHits(List<RetrieveHitSummary> hits) {
+        Pending pending = current.get();
+        if (pending == null || hits == null || hits.isEmpty()) {
+            return;
+        }
+        pending.retrieveHits.clear();
+        pending.retrieveHits.addAll(hits);
+    }
+
+    @Override
     public InvokeObservation complete(boolean success, String errorMessage) {
         Pending pending = current.get();
         current.remove();
@@ -121,7 +132,8 @@ public final class InMemoryObservePort implements ObservePort {
                 route == null ? "" : route,
                 model == null ? "" : model,
                 List.copyOf(pending.blockedTools),
-                List.copyOf(pending.executedTools));
+                List.copyOf(pending.executedTools),
+                List.copyOf(pending.retrieveHits));
         ring.addFirst(observation);
         while (ring.size() > CAPACITY) {
             ring.pollLast();
@@ -158,6 +170,7 @@ public final class InMemoryObservePort implements ObservePort {
         private final AtomicReference<String> model = new AtomicReference<>("");
         private final Set<String> blockedTools = new LinkedHashSet<>();
         private final List<String> executedTools = new ArrayList<>();
+        private final List<RetrieveHitSummary> retrieveHits = new ArrayList<>();
 
         private Pending(String traceId, String sessionId, String agentId, long startNanos) {
             this.traceId = traceId;

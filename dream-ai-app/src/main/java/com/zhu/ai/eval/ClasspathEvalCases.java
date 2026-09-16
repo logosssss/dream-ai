@@ -76,7 +76,9 @@ public final class ClasspathEvalCases {
                         integer(expectNode, "maxModelCalls"),
                         text(expectNode, "route"),
                         strings(expectNode, "mustBlockTools"),
-                        strings(expectNode, "mustExecuteTools"));
+                        strings(expectNode, "mustExecuteTools"),
+                        integer(expectNode, "minRetrieveHits"),
+                        integer(expectNode, "maxRetrieveHits"));
         return new EvalCase(id, agentId, sessionId, input, expect);
     }
 

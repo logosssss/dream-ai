@@ -8,6 +8,7 @@
     "route": "review",
     "outputContains": ["[route=review]"],
     "outputNotContains": ["[route=chat]", "[route=knowledge]"],
-    "maxToolCalls": 0
+    "maxToolCalls": 0,
+    "maxRetrieveHits": 0
   }
 }

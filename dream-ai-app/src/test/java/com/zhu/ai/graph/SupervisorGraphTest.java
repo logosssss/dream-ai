@@ -49,6 +49,65 @@ class SupervisorGraphTest {
     }
 
     @Test
+    void knowledgeNoHitRefusesWithoutCallingModel() {
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        SupervisorGraph graph = new SupervisorGraph(request -> {
+            calls.incrementAndGet();
+            return "should-not";
+        });
+        GraphRunResult result = graph.run("从知识库检索 AgentGateway", List.of(), "", "");
+        assertEquals(IntentRouter.KNOWLEDGE, result.route());
+        assertEquals(SupervisorGraph.NO_HIT_REPLY, result.output());
+        assertEquals("", result.model());
+        assertEquals(0, calls.get());
+    }
+
+    @Test
+    void knowledgeHitAppendsCitationWhenModelOmitsIt() {
+        SupervisorGraph graph = new SupervisorGraph(request -> "知识答案");
+        GraphRunResult result =
+                graph.run("从知识库检索 AgentGateway", List.of(), "", "[1] HTTP 只进 AgentGateway。");
+        assertEquals(IntentRouter.KNOWLEDGE, result.route());
+        assertEquals("知识答案" + SupervisorGraph.CITATION_FALLBACK, result.output());
+    }
+
+    @Test
+    void knowledgeHitKeepsExistingCitation() {
+        SupervisorGraph graph = new SupervisorGraph(request -> "见 [1]");
+        GraphRunResult result =
+                graph.run("从知识库检索 AgentGateway", List.of(), "", "[1] HTTP 只进 AgentGateway。");
+        assertEquals("见 [1]", result.output());
+    }
+
+    @Test
+    void knowledgeStreamAppendsCitationDelta() {
+        ChatPort chat = new ChatPort() {
+            @Override
+            public String complete(ChatRequest request) {
+                return "知识答案";
+            }
+
+            @Override
+            public String stream(ChatRequest request, TokenSink sink) {
+                sink.onDelta("知识答案");
+                return "知识答案";
+            }
+        };
+        List<String> deltas = new ArrayList<>();
+        TokenSink sink = new TokenSink() {
+            @Override
+            public void onDelta(String delta) {
+                deltas.add(delta);
+            }
+        };
+        SupervisorGraph graph = new SupervisorGraph(chat);
+        GraphRunResult result =
+                graph.run("从知识库检索 AgentGateway", List.of(), "", "[1] HTTP 只进 AgentGateway。", sink);
+        assertEquals("知识答案" + SupervisorGraph.CITATION_FALLBACK, result.output());
+        assertEquals(List.of("知识答案", SupervisorGraph.CITATION_FALLBACK), deltas);
+    }
+
+    @Test
     void reviewRouteUsesReviewSystem() {
         AtomicReference<ChatRequest> seen = new AtomicReference<>();
         GraphPort graph = new SupervisorGraph(request -> {

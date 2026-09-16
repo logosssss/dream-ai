@@ -5,6 +5,7 @@
   "expect": {
     "success": true,
     "agentId": "chat",
-    "outputContains": ["你好"]
+    "outputContains": ["你好"],
+    "maxRetrieveHits": 0
   }
 }

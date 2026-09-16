@@ -77,7 +77,45 @@ class DefaultAgentGatewayTest {
                 index,
                 observe);
         gateway.invoke(new AgentInvokeRequest("chat", "rag-1", "什么是 AgentGateway"));
+        assertTrue(retrieved.get().startsWith("[1]"));
         assertTrue(retrieved.get().contains("AgentGateway"));
+    }
+
+    @Test
+    void chitchatDoesNotRetrieve() {
+        var index = new InMemoryKeywordIndex();
+        index.ingest("HTTP 只进 AgentGateway，不拆 8096。");
+        AtomicReference<String> retrieved = new AtomicReference<>("unset");
+        DefaultAgentGateway gateway = new DefaultAgentGateway(
+                new InMemoryAgentRegistry(List.of(new RecordingHandler("chat", (id, req) -> {
+                    retrieved.set(req.retrievedContext());
+                    return new AgentInvokeResult(id, "ok");
+                }))),
+                new InMemoryConversationPort(),
+                new InMemoryMemoryPort(),
+                index,
+                new InMemoryObservePort());
+        gateway.invoke(new AgentInvokeRequest("chat", "chat-1", "你好"));
+        assertEquals("", retrieved.get());
+    }
+
+    @Test
+    void observeKeepsRetrieveSummaries() {
+        var index = new InMemoryKeywordIndex();
+        index.ingest("HTTP 只进 AgentGateway，不拆 8096。");
+        ObservePort observe = new InMemoryObservePort();
+        DefaultAgentGateway gateway = new DefaultAgentGateway(
+                new InMemoryAgentRegistry(List.of(new RecordingHandler("chat", (id, req) ->
+                        new AgentInvokeResult(id, "ok")))),
+                new InMemoryConversationPort(),
+                new InMemoryMemoryPort(),
+                index,
+                observe);
+        AgentInvokeResult result =
+                gateway.invoke(new AgentInvokeRequest("chat", "rag-obs", "什么是 AgentGateway"));
+        assertFalse(result.observe().retrieveHits().isEmpty());
+        assertTrue(result.observe().retrieveHits().getFirst().id().startsWith("kw-"));
+        assertTrue(result.observe().retrieveHits().getFirst().score() > 0);
     }
 
     @Test
