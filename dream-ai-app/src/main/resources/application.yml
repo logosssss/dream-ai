@@ -85,10 +85,14 @@ dream:
     min-score: ${DREAM_RAG_MIN_SCORE:0.0}
     # 非空则只保留该 docType；空 = 不过滤
     doc-type: ${DREAM_RAG_DOC_TYPE:}
-    # 混合检索中向量分权重；无 pgvector 时忽略
+    # 混合检索中向量分权重；无 pgvector 时忽略（仅 fusion=linear 时使用）
     hybrid-alpha: ${DREAM_RAG_HYBRID_ALPHA:0.6}
-    # 召回加宽后按关键词重叠 + 长度再排
+    # 融合策略：linear | rrf
+    fusion: ${DREAM_RAG_FUSION:linear}
+    # 召回加宽后按关键词重叠 + 长度再排（未配 stages 时决定末段是 rerank 还是 truncate）
     rerank: ${DREAM_RAG_RERANK:true}
+    # 可选显式阶段；空则按 rerank 生成 recall → filter → (rerank|truncate)
+    # stages: [recall, filter, rerank]
   # 按任务选模型；空 = 用 spring.ai.dashscope.chat.options.model
   models:
     default: ${DREAM_MODEL_DEFAULT:deepseek-v4-pro}

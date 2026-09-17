@@ -51,4 +51,5 @@ dream:
     min-score: 0.0
     doc-type: ""
     hybrid-alpha: 0.6
+    fusion: linear
     rerank: true

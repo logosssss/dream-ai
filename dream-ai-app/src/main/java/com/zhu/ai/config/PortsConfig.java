@@ -2,10 +2,12 @@ package com.zhu.ai.config;
 
 import com.zhu.ai.conversation.InMemoryConversationPort;
 import com.zhu.ai.conversation.MyBatisConversationPort;
-import com.zhu.ai.knowledge.HybridRetrievePort;
 import com.zhu.ai.knowledge.InMemoryKeywordIndex;
+import com.zhu.ai.knowledge.MultiSourceRecallStage;
 import com.zhu.ai.knowledge.PgVectorRetrievePort;
-import com.zhu.ai.knowledge.RetrievePipeline;
+import com.zhu.ai.knowledge.RetrieveOptions;
+import com.zhu.ai.knowledge.RetrieveStages;
+import com.zhu.ai.knowledge.ScoreFusions;
 import com.zhu.ai.kernel.conversation.ConversationPort;
 import com.zhu.ai.kernel.knowledge.RetrievePort;
 import com.zhu.ai.kernel.memory.MemoryPort;
@@ -91,21 +93,34 @@ public class PortsConfig {
         double minScore = rag.normalizedMinScore();
         InMemoryKeywordIndex lexical = new InMemoryKeywordIndex(minScore);
         lexical.ingest(readIntro(), "classpath:" + INTRO_RESOURCE, INTRO_DOC_TYPE);
-        RetrievePort inner;
+        List<MultiSourceRecallStage.WeightedSource> sources = new ArrayList<>();
         VectorStore store = stores.getIfAvailable();
         if (store != null) {
             ingestIntro(store, vectorJdbc.getIfAvailable());
-            RetrievePort dense = new PgVectorRetrievePort(store, minScore);
-            inner = new HybridRetrievePort(lexical, dense, rag.normalizedHybridAlpha());
+            double alpha = rag.normalizedHybridAlpha();
+            sources.add(new MultiSourceRecallStage.WeightedSource("lexical", lexical, 1.0 - alpha));
+            sources.add(new MultiSourceRecallStage.WeightedSource(
+                    "dense", new PgVectorRetrievePort(store, minScore), alpha));
             log.info(
-                    "RetrievePort: Hybrid(keyword+pgvector) minScore={} alpha={}",
+                    "RetrievePort: staged hybrid minScore={} alpha={} fusion={} stages={}",
                     minScore,
-                    rag.normalizedHybridAlpha());
+                    alpha,
+                    rag.normalizedFusion(),
+                    rag.normalizedStages());
         } else {
-            inner = lexical;
-            log.info("RetrievePort: InMemoryKeywordIndex minScore={} (no VectorStore)", minScore);
+            sources.add(new MultiSourceRecallStage.WeightedSource("lexical", lexical, 1.0));
+            log.info(
+                    "RetrievePort: staged lexical minScore={} fusion={} stages={} (no VectorStore)",
+                    minScore,
+                    rag.normalizedFusion(),
+                    rag.normalizedStages());
         }
-        return new RetrievePipeline(inner, rag.normalizedDocType(), rag.isRerank());
+        return RetrieveStages.pipeline(
+                sources,
+                ScoreFusions.create(rag.normalizedFusion()),
+                RetrieveOptions.ofDocType(rag.normalizedDocType()),
+                rag.normalizedStages(),
+                List.of());
     }
 
     // --- 观测 ---

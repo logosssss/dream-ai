@@ -2,13 +2,13 @@ package com.zhu.ai.knowledge;
 
 import com.zhu.ai.kernel.knowledge.RetrieveHit;
 import com.zhu.ai.kernel.knowledge.RetrievePort;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * 关键词 + 向量融合。同一正文合并：{@code α * 向量分 + (1-α) * 关键词分}。
- * 缺一侧当 0。ids 不同时以正文为键。
+ * 两路线性混合的便捷 {@link RetrievePort}：内部委托 {@link LinearWeightedFusion}。
+ * <p>
+ * 新装配请优先用 {@link MultiSourceRecallStage} + {@link StagedRetrievePort}（可多路、可换融合策略）。
+ * 本类保留给单测与「只要一个 Port、不要整段管线」的场景。
  */
 public final class HybridRetrievePort implements RetrievePort {
 
@@ -18,6 +18,13 @@ public final class HybridRetrievePort implements RetrievePort {
 
     private final double vectorWeight;
 
+    private final ScoreFusion fusion = new LinearWeightedFusion();
+
+    /**
+     * @param lexical      关键词检索；{@code null} 视为该路恒空
+     * @param dense        向量检索；{@code null} 视为该路恒空
+     * @param vectorWeight α，必须在 {@code [0, 1]}，否则构造失败
+     */
     public HybridRetrievePort(RetrievePort lexical, RetrievePort dense, double vectorWeight) {
         this.lexical = lexical;
         this.dense = dense;
@@ -34,46 +41,10 @@ public final class HybridRetrievePort implements RetrievePort {
         }
         List<RetrieveHit> kw = lexical == null ? List.of() : lexical.retrieve(query, topK);
         List<RetrieveHit> vec = dense == null ? List.of() : dense.retrieve(query, topK);
-        if (kw.isEmpty()) {
-            return cap(vec, topK);
-        }
-        if (vec.isEmpty()) {
-            return cap(kw, topK);
-        }
-        Map<String, RetrieveHit> byText = new LinkedHashMap<>();
-        for (RetrieveHit hit : kw) {
-            byText.put(hit.text(), scale(hit, 1.0 - vectorWeight));
-        }
-        for (RetrieveHit hit : vec) {
-            RetrieveHit existing = byText.get(hit.text());
-            if (existing == null) {
-                byText.put(hit.text(), scale(hit, vectorWeight));
-            } else {
-                byText.put(hit.text(), merge(existing, hit));
-            }
-        }
-        return byText.values().stream()
-                .sorted((a, b) -> Double.compare(b.score(), a.score()))
-                .limit(topK)
-                .toList();
-    }
-
-    private RetrieveHit scale(RetrieveHit hit, double weight) {
-        return new RetrieveHit(hit.id(), hit.text(), hit.score() * weight, hit.source(), hit.docType());
-    }
-
-    private RetrieveHit merge(RetrieveHit lexicalHit, RetrieveHit denseHit) {
-        double fused = lexicalHit.score() + denseHit.score() * vectorWeight;
-        String id = denseHit.id().isBlank() ? lexicalHit.id() : denseHit.id();
-        String source = denseHit.source().isBlank() ? lexicalHit.source() : denseHit.source();
-        String docType = denseHit.docType().isBlank() ? lexicalHit.docType() : denseHit.docType();
-        return new RetrieveHit(id, denseHit.text(), fused, source, docType);
-    }
-
-    private static List<RetrieveHit> cap(List<RetrieveHit> hits, int topK) {
-        if (hits.size() <= topK) {
-            return hits;
-        }
-        return List.copyOf(hits.subList(0, topK));
+        return fusion.fuse(
+                List.of(
+                        new ScoreFusion.ChannelHits("lexical", kw, 1.0 - vectorWeight),
+                        new ScoreFusion.ChannelHits("dense", vec, vectorWeight)),
+                topK);
     }
 }
