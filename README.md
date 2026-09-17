@@ -1,10 +1,10 @@
 # Dream-AI
 
-用 **Java 模块化单体** 实现的 Agent 运行时：单进程可跑，Maven 按能力切模块，用 Port 隔离厂商与中间件。当前已打通网关、工具循环、会话 / Memory、RAG、观测与 MCP Client。
+用 **Java 模块化单体** 实现的 Agent 运行时：单进程可跑，Maven 按能力切模块，用 Port 隔离厂商与中间件。
 
-本仓库会**持续维护并扩展**：在现有主路径上继续加能力、补文档与示例，逐步演进为更完整的 Agent 项目。欢迎 Star / Watch 跟进更新。
+当前已打通：**网关、工具循环（白名单 / HITL / 失败重试）、会话 / Memory、分阶段 RAG、Supervisor Graph（含 Knowledge 子图）、SSE、观测、评测，以及配套前端 `dream-ai-web`**。
 
-一条请求从 HTTP 进来，经过网关组装上下文，再进入 Agent 与模型 / 工具循环，最后带上观测信息返回——方便对照源码理解平台层边界，也适合作为后续能力扩展的底盘。
+本仓库会**持续维护并扩展**：在现有主路径上继续加能力、补文档与示例。欢迎 Star / Watch 跟进更新。
 
 - 产品站：[dream-saas.com](https://www.dream-saas.com/)
 - 公众号：见文末二维码（扫码关注，系列文章会同步更新）
@@ -21,6 +21,7 @@
 - [技术栈](#技术栈)
 - [环境要求](#环境要求)
 - [快速开始](#快速开始)
+- [演示路径（约 10 分钟）](#演示路径约-10-分钟)
 - [配置说明](#配置说明)
 - [HTTP API](#http-api)
 - [能力说明](#能力说明)
@@ -37,10 +38,10 @@
 ## 适合谁
 
 - 想用 **Spring Boot + Spring AI** 自己搭一条可运行的 Agent 主路径  
-- 关心 **网关边界、工具循环、会话与 Memory、RAG、观测、MCP Client** 各自切在哪一层  
-- 需要一个 **能 clone、能改、能演示** 的参考实现，而不是只有概念图  
+- 关心 **网关、工具循环、Graph 编排、会话 / Memory、RAG、观测、MCP Client** 各自切在哪一层  
+- 需要一个 **能 clone、能改、能演示** 的参考实现（含配套前端），而不是只有概念图  
 
-本仓库面向学习与工程实践：默认不包含生产级多租户、计费、管理后台等完整 SaaS 产品面，但会在同一底盘上**持续迭代代码与功能**（更多 Agent、工具、检索与可观测能力等）。
+本仓库面向学习与工程实践：默认不包含生产级多租户、计费、管理后台等完整 SaaS 产品面。
 
 ---
 
@@ -57,40 +58,41 @@ Dream-AI 选第三条路：**模块化单体**——一个 JVM 跑通主路径�
 
 ## 能做什么
 
-当前示例业务只做一个 Agent：`chat`。
-
 | 能力 | 说明 |
 |------|------|
-| 对话网关 | HTTP 只进入 `AgentGateway`，再路由到 `AgentHandler` |
-| 工具循环 | 显式限步（默认最多 5 步）；进程内工具 + 可选 MCP 工具 |
-| 会话 | 按 `sessionId` 落库 MySQL（`conversation_turn`） |
-| Memory | 经 `MemoryPort`（Redis 实现，缺省可降级为内存） |
-| RAG | 进程内 pgvector 检索，结果写入 system prompt |
-| 观测 | 每轮 `traceId`、耗时、`modelCalls` / `toolCalls`；`GET /api/observe` |
-| MCP Client | 可选对接智谱 SSE（如 `web_search`）；本仓库不做「自环」MCP Server |
+| 对话网关 | HTTP 只进 `AgentGateway`；`agentId=chat` 直达工具循环，`agentId=graph` 走 Supervisor |
+| Graph 编排 | 意图路由 → chat / knowledge / review；knowledge 为子图（gate → generate → cite \| refuse） |
+| 工具循环 | 显式限步；进程内工具 + 可选 MCP；白名单 / HITL；执行失败可重试，拒执与失败分字段 |
+| 会话 / Memory | MySQL 短会话 + Redis 长期记忆（可异步摘要） |
+| RAG | 分阶段检索（recall / filter / rerank 等）+ fusion；知识意图才检索 |
+| 流式 | `POST /api/agent/invoke/stream`（SSE：route / model / tool_* / retrieve / delta / done） |
+| 观测 | `traceId`、耗时、route、model、blocked / executed / failed、retrieveHits |
+| 评测 | classpath golden + `GET/POST /api/eval/*` |
+| 配套前端 | [`dream-ai-web`](dream-ai-web/README.md)：对话 / SSE / HITL / Observe / Eval |
+| MCP Client | 可选对接智谱 SSE；本仓不做自环 MCP Server |
 
 ---
 
 ## 请求主路径
 
 ```text
-HTTP POST /api/agent/invoke
+HTTP POST /api/agent/invoke  或  /invoke/stream
         │
         ▼
- AgentInvokeController
-        │  只调用 AgentGateway（不直接碰 ChatPort / Mapper）
+ AgentInvokeController   （可选头 X-Dream-Tool-Approvals）
+        │  只调用 AgentGateway
         ▼
  DefaultAgentGateway
-        │  开启观测 → 组装 history / memory / retrieve
+        │  begin 观测 → history / memory / retrieve → Handler
         ▼
- ChatAgent
-        │  编写 system，调用 ChatPort
+ ┌─ chat ─► ChatAgent ─► ChatPort + ToolCallingLoop
+ │
+ └─ graph ► GraphAgent ─► SupervisorGraph
+              ├ chat 叶
+              ├ KnowledgeSubGraph（gate / generate / cite|refuse）
+              └ review 叶
         ▼
- DashScopeChatAdapter + ToolCallingLoop
-        │  模型一步 → 若有 tool call 则经 ToolPort 执行 → 结果喂回
-        │  直到无工具调用或达到步数上限
-        ▼
- HTTP 响应（output + 观测摘要）
+ HTTP JSON 或 SSE done（output + 观测摘要）
 ```
 
 **分层约定：**
@@ -106,12 +108,11 @@ HTTP POST /api/agent/invoke
 | 模块 | 职责 | 允许依赖 |
 |------|------|----------|
 | `dream-ai-bom` | 第三方版本对齐 | 无业务代码 |
-| `dream-ai-kernel` | Port / SPI：Gateway、Chat、Tool、Memory、Conversation、Retrieve、Observe 等 | 无 Web、无厂商 SDK |
-| `dream-ai-knowledge` | 进程内 RAG（检索适配） | 仅 `kernel` |
-| `dream-ai-agents` | `AgentHandler` 实现（当前为 `chat`） | 仅 `kernel` |
-| `dream-ai-app` | 唯一可启动模块：装配、HTTP、Actuator、厂商适配 | kernel + knowledge + agents |
-
-业务 Agent 用 **Java 包** 隔离，不为每个 Agent 单独拆 Maven 模块。
+| `dream-ai-kernel` | Port / SPI | 无 Web、无厂商 SDK |
+| `dream-ai-knowledge` | 进程内 RAG | 仅 `kernel` |
+| `dream-ai-agents` | `ChatAgent` / `GraphAgent` | 仅 `kernel` |
+| `dream-ai-app` | Boot 入口、Graph 实现、HTTP、适配器 | kernel + knowledge + agents |
+| `dream-ai-web` | 配套前端（Vite + React） | 仅调 HTTP API |
 
 ---
 
@@ -120,27 +121,21 @@ HTTP POST /api/agent/invoke
 | 用途 | 选型 |
 |------|------|
 | 语言 | Java 21 |
-| 运行时 | Spring Boot 3.5.x + Spring Cloud 2025.x + Spring Cloud Alibaba |
-| LLM | Spring AI 1.1.x + Spring AI Alibaba（DashScope） |
+| 运行时 | Spring Boot 3.5.x |
+| LLM / Graph | Spring AI + Spring AI Alibaba（DashScope / StateGraph） |
 | 会话库 | MySQL + MyBatis-Plus |
-| 向量库 | PostgreSQL + pgvector（Spring AI VectorStore） |
-| 缓存 / Memory | Redis（+ Redisson） |
-| 配置 / 注册 | Nacos Config + Discovery（单进程也可注册） |
+| 向量库 | PostgreSQL + pgvector（可降级内存关键词） |
+| 缓存 / Memory | Redis（可降级内存） |
+| 前端 | Vite 5 + React 18 + TypeScript |
 | MCP | Spring AI MCP Client → 智谱 SSE（可选） |
 
 ---
 
 ## 环境要求
 
-- **JDK 21**、Maven 3.9+  
-- 本地中间件：
-  - MySQL（建议库名 `dream_ai_lab`）
-  - Redis（默认 `127.0.0.1:6379`）
-  - Nacos（命名空间建议 `dream-ai`，可用环境变量覆盖）
-  - PostgreSQL + pgvector（RAG；若暂时不做检索，可按配置降级）
-- 云服务：
-  - 阿里云 DashScope API Key（对话 / Embedding）
-  - 可选：智谱 API Key（MCP 联网搜索）
+- **JDK 21**、Maven 3.9+；前端需 **Node 20+** / npm  
+- 本地中间件：MySQL、Redis；RAG 用 PostgreSQL + pgvector（可按配置降级）  
+- 云服务：DashScope API Key；可选智谱 Key（MCP）  
 
 单元测试使用 `test` profile，**不强制**本机已启动全部中间件。
 
@@ -152,10 +147,10 @@ HTTP POST /api/agent/invoke
 
 ```bash
 cp dream-ai-app/application-local.yml.example dream-ai-app/application-local.yml
-# 编辑该文件，填入数据库密码、DashScope Key、Nacos 等
+# 编辑：数据库密码、DashScope Key 等
 ```
 
-也可参考仓库根目录 [`.env.example`](.env.example) 自行导出同名环境变量。注意：Spring Boot **默认不会**自动加载 `.env` 文件，需在 shell / IDE 中配置 Environment。
+工作目录请能加载到该文件（建议在 `dream-ai-app` 下启动）。也可参考 [`.env.example`](.env.example) 导出环境变量（Boot **不会**自动读 `.env`）。
 
 ### 2. 创建数据库
 
@@ -164,25 +159,43 @@ CREATE DATABASE IF NOT EXISTS dream_ai_lab
   DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-会话表可在启动时由 `spring.sql.init` 按 [`schema.sql`](dream-ai-app/src/main/resources/schema.sql) 自动创建。
-
 ### 3. 编译与测试
 
 ```bash
 mvn -q -pl dream-ai-app -am test
 ```
 
-### 4. 启动
+### 4. 启动后端
 
 ```bash
-mvn -pl dream-ai-app spring-boot:run
+cd dream-ai-app
+mvn spring-boot:run
 ```
 
-默认端口 **8090**。
+默认端口 **8090**。健康检查：`GET http://127.0.0.1:8090/actuator/health`。
 
-- 健康检查：`GET http://127.0.0.1:8090/actuator/health`  
-- 启动日志中可看到已注册工具，例如：`ToolPort registered tools=[current_date_time, …]`  
-- 若开启 MCP Client，还会看到：`MCP Client connected … tool=web_search`
+### 5. 启动配套前端
+
+```bash
+cd dream-ai-web
+npm install
+npm run dev
+```
+
+打开 `http://127.0.0.1:5173`。Vite 将 `/api`、`/actuator` 代理到 8090。详见 [`dream-ai-web/README.md`](dream-ai-web/README.md)。
+
+---
+
+## 演示路径（约 10 分钟）
+
+同一浏览器会话（或固定一个 `sessionId`）按顺序点一遍：
+
+1. **闲聊 / 工具** — `agentId=chat`，问「现在几点了」→ 看工具执行与 `executedTools`。  
+2. **Graph 知识** — `agentId=graph`，问「从知识库检索 AgentGateway」→ SSE 出现 `route=knowledge`；有命中则回答含 `[1]`，无命中则拒答「资料不足」。  
+3. **Graph 审查** — 问「请审查这段代码有没有风险点」→ `route=review`。  
+4. **HITL** — 配置 `require-approval` 的工具，清空审批头再问需联网的问题 → `blockedTools`；填上 `X-Dream-Tool-Approvals` 再试。  
+5. **评测** — 前端 Eval 页点「POST /api/eval/run」，或 `curl -X POST http://127.0.0.1:8090/api/eval/run`。  
+6. **观测** — 对照 `/api/observe` 或前端 Observe：route / model / blocked / executed / failed。
 
 ---
 
@@ -190,28 +203,21 @@ mvn -pl dream-ai-app spring-boot:run
 
 | 文件 | 用途 |
 |------|------|
-| [`dream-ai-app/src/main/resources/application.yml`](dream-ai-app/src/main/resources/application.yml) | 主配置（占位符 + 本地默认） |
-| `dream-ai-app/application-local.yml` | 本地私密覆盖（gitignore，optional import） |
-| [`nacos/dream-ai.yml`](nacos/dream-ai.yml) | Nacos 配置样例 |
+| [`dream-ai-app/src/main/resources/application.yml`](dream-ai-app/src/main/resources/application.yml) | 主配置 |
+| `dream-ai-app/application-local.yml` | 本地私密覆盖（gitignore） |
+| [`dream-ai-web/vite.config.ts`](dream-ai-web/vite.config.ts) | 前端开发代理 |
 | [`.env.example`](.env.example) | 环境变量清单 |
 
-### 常用环境变量
+### 常用环境变量 / 配置
 
-| 变量 | 含义 | 说明 |
-|------|------|------|
-| `MYSQL_*` | 会话库 | 默认指向本机 `dream_ai_lab` |
-| `REDIS_HOST` / `REDIS_PORT` | Memory | 默认 `127.0.0.1:6379` |
-| `NACOS_ADDR` / `NACOS_NAMESPACE` | 配置与注册 | 默认 `127.0.0.1:8848` / `dream-ai` |
-| `POSTGRES_*` | 向量库 | RAG 使用 |
-| `AI_DASHSCOPE_API_KEY` | 通义 Key | 跑真实模型时必填 |
-| `AI_DASHSCOPE_MODEL` | 聊天模型 | 如 `qwen3.8-27b`（部分模型需 `multi-model=true`） |
-| `DREAM_MCP_CLIENT_ENABLED` | 是否启用智谱 MCP Client | 默认 `false` |
-| `ZHIPU_API_KEY` | 智谱 Key | 开启 MCP 时必填 |
+| 项 | 含义 |
+|------|------|
+| `AI_DASHSCOPE_API_KEY` | 通义 Key |
+| `dream.tools.allowlist` / `require-approval` / `hitl-mode` | 工具白名单与 HITL |
+| `dream.tools.max-retries` | 工具执行失败额外重试次数（默认 2） |
+| `DREAM_MCP_CLIENT_ENABLED` / `ZHIPU_API_KEY` | 可选 MCP Client |
 
-### DashScope 提示
-
-- `base-url` 使用原生地址：`https://dashscope.aliyuncs.com`（不要误用 OpenAI compatible-mode 路径，否则容易 404）。  
-- 部分多模态模型需要 `spring.ai.dashscope.chat.options.multi-model: true`；本仓库适配器会在请求选项里显式带上，避免被工具相关选项冲掉。
+DashScope 使用原生 `https://dashscope.aliyuncs.com`；部分模型需 `multi-model: true`。
 
 ---
 
@@ -219,89 +225,72 @@ mvn -pl dream-ai-app spring-boot:run
 
 ### `POST /api/agent/invoke`
 
-请求示例：
-
 ```json
 {
-  "agentId": "chat",
+  "agentId": "graph",
   "sessionId": "demo-1",
-  "input": "你好，介绍一下你自己"
+  "input": "从知识库检索 AgentGateway"
 }
 ```
 
-响应字段：
+可选头：`X-Dream-Tool-Approvals: web_search_prime,datetime_offset`。
 
-| 字段 | 含义 |
-|------|------|
-| `agentId` | 处理该请求的 Agent |
-| `output` | 最终文本回复 |
-| `traceId` | 本轮观测 ID |
-| `durationMs` | 耗时（毫秒） |
-| `modelCalls` | 模型调用次数 |
-| `toolCalls` | 工具执行次数 |
+响应要点：`output`、`traceId`、`durationMs`、`modelCalls`、`toolCalls`、`route`、`model`、`blockedTools` / `executedTools` / `failedTools`、`retrieveHits` / `retrieveHitSummaries`。
 
-```bash
-curl -s http://127.0.0.1:8090/api/agent/invoke \
-  -H "Content-Type: application/json" \
-  -d "{\"agentId\":\"chat\",\"sessionId\":\"demo-1\",\"input\":\"现在几点了？\"}"
-```
+### `POST /api/agent/invoke/stream`
 
-询问当前时间时，通常会调用本地工具 `current_date_time`（日志中可见 `tool executed name=current_date_time`）。
+SSE 事件：`retrieve`、`route`、`model`、`tool_start` / `tool_blocked` / `tool_executed` / `tool_failed`、`delta`、`done`、`error`。
 
 ### `GET /api/observe?limit=20`
 
-返回最近若干轮 invoke 的观测摘要（内存环缓冲，进程重启后清空）。
+最近若干轮观测（进程内环缓冲，重启清空）。
+
+### `GET /api/eval/cases` · `POST /api/eval/run`
+
+列出 / 执行 classpath golden 用例。
 
 ### Actuator
 
-- `GET /actuator/health`  
-- `GET /actuator/info`、`/actuator/metrics`（以暴露配置为准）
+`GET /actuator/health` 等（以暴露配置为准）。
 
 ---
 
 ## 能力说明
 
-### 1. 工具循环
+### 1. 工具循环与控制面
 
-- 实现类：`ToolCallingLoop`（位于 app）。  
-- 停止条件：模型本步不再发起 tool call，或达到最大步数（默认 5）。  
-- 内置工具：`current_date_time`（上海时区）。  
-- 统一执行口：`ToolPort` ← 容器中注册的全部 `ToolCallback`。
+- `ToolCallingLoop`：限步；策略拒执 → `blockedTools`（不重试）；`tool error:` → 按 `max-retries` 重试，耗尽 → `failedTools`；未知工具不重试。  
+- `GuardedToolPort`：白名单 / HITL；广告给模型的列表可与执行策略分离。
 
-### 2. 会话与 Memory
+### 2. Graph
+
+- 主图只做意图路由；knowledge 嵌入 `KnowledgeSubGraph`（CompiledGraph）。  
+- 检索仍由 Gateway 注入；子图负责门禁与引用补全。  
+- 与 `chat` 的差别：graph 有叶级人设与路由，chat 是单 Agent 工具循环。
+
+### 3. 会话与 Memory
 
 | | ConversationPort | MemoryPort |
 |--|------------------|------------|
-| 存什么 | 多轮 USER / ASSISTANT 原文 | 可压缩的长期记忆文本 |
-| 默认实现 | MySQL `conversation_turn` | Redis（可降级内存） |
-| 如何进模型 | Gateway 组装为 history | Gateway 组装为 memoryNotes，由 Agent 写入 system |
+| 存什么 | 多轮原文 | 可压缩长期记忆 |
+| 默认实现 | MySQL | Redis（可降级） |
+| 进模型 | history | memoryNotes → system |
 
-### 3. RAG
+超长记忆可走异步摘要（事件驱动），不阻塞 invoke。
 
-- 契约：`RetrievePort`（kernel）。  
-- 实现：pgvector VectorStore（app 装配；向量库与 MySQL 使用不同数据源）。  
-- Gateway 检索后交给 Agent，Agent 把片段写入 system 中的「参考资料」。
+### 4. RAG
 
-### 4. 观测
+- `RetrievePort` + 分阶段管线（可配 fusion / stages）。  
+- 知识类意图才检索；命中摘要进观测与 SSE `retrieve`。
 
-- 契约：`ObservePort`；默认实现为进程内环缓冲，并配合 MDC `traceId`。  
-- invoke 响应中携带本轮摘要；也可用 `/api/observe` 查询。  
-- 本仓库只提供轻量观测契约，不附带完整运营后台 UI。
+### 5. 观测与评测
 
-### 5. MCP Client（可选）
+- 观测契约面向排障（拒执 / 失败 / 路由），不是运营 Admin。  
+- 评测为硬断言 golden，不另开 LLM-as-judge。
 
-- 角色：本仓库作为 **MCP Client**；工具由外部 MCP Server（示例为智谱联网搜索）提供。  
-- 开关：`DREAM_MCP_CLIENT_ENABLED=true`，并配置 `ZHIPU_API_KEY`。  
-- 示例策略：最多挂载 **1** 个远端工具（优先 `web_search`）→ 转为 `ToolCallback` → 进入同一 `ToolPort`。  
-- 和进程内 `@Tool` / `FunctionToolCallback` 的关系：对模型而言最终都是可调用工具；差别在于贡献路径——本地直接注册，或经 MCP 的 `list_tools` / `call_tool`。
+### 6. MCP Client（可选）
 
-**如何确认走了 MCP：**
-
-1. 启动日志出现 `MCP Client connected`，且 `ToolPort registered tools` 中包含 `web_search`。  
-2. 使用新的 `sessionId`，明确要求联网，例如：「请用 web_search 搜索今天杭州天气」。  
-3. 日志出现 `tool call(s) web_search` 与 `tool executed name=web_search`，响应里 `toolCalls > 0`。
-
-说明：仅打开开关并不保证模型一定调工具；若 RAG 已命中或提问不够「时效 / 联网」，模型可能直接回答。
+开关打开并配置智谱 Key 后，远端工具进入同一 `ToolPort`。确认方式：启动日志含 MCP 工具名，且调用时出现 `tool executed`。
 
 ---
 
@@ -310,65 +299,52 @@ curl -s http://127.0.0.1:8090/api/agent/invoke \
 ```bash
 mvn -pl dream-ai-app -am test -Dsurefire.failIfNoSpecifiedTests=false
 
-# MCP 相关单测；若本机设置了 ZHIPU_API_KEY，可额外跑真连用例
-mvn -pl dream-ai-app test -Dtest=ZhipuMcpClientBridgeTest
+cd dream-ai-web && npm run build
 ```
 
-测试配置见 `dream-ai-app/src/test/resources/application-test.yml`：关闭 Nacos / Redis / 真实数据源与真模型，使用 stub `ChatPort` 验证网关与 HTTP。
+测试配置见 `dream-ai-app/src/test/resources/application-test.yml`（stub ChatPort，不强制真中间件）。
 
 ---
 
-## 项目结构（精简）
+## 项目结构
 
 ```text
 dream-ai/
-├── pom.xml
 ├── dream-ai-bom/
-├── dream-ai-kernel/          # Port & SPI
-├── dream-ai-agents/          # ChatAgent
-├── dream-ai-knowledge/       # RAG
-├── dream-ai-app/             # 唯一 Spring Boot 应用
-│   └── src/main/java/com/zhu/ai/
-│       ├── config/           # 装配接线
-│       ├── gateway/
-│       ├── llm/              # 模型适配、工具循环
-│       ├── conversation/
-│       ├── memory/
-│       ├── knowledge/
-│       ├── mcp/
-│       ├── observe/
-│       └── web/
-├── nacos/                    # Nacos 配置样例
-└── docs/assets/              # 公众号二维码等静态资源
+├── dream-ai-kernel/       # Port & SPI
+├── dream-ai-agents/       # ChatAgent / GraphAgent
+├── dream-ai-knowledge/    # RAG 实现
+├── dream-ai-app/          # Boot：gateway / graph / llm / web …
+├── dream-ai-web/          # 配套前端
+├── docs/assets/
+└── README.md
 ```
 
 ---
 
 ## 设计原则
 
-1. **先跑通主路径，再谈拆分** — 单进程验证网关 → Agent → 模型 / 工具 / 检索是否闭环。  
-2. **用 Port 挡变化** — Port 是能力契约（不是 HTTP 端口）；kernel 不依赖 Web 与厂商 SDK；换模型或换存储时改 app 适配即可。  
-3. **HTTP 入口收敛** — 对外只暴露有限 API，业务扩展走 Agent，而不是到处加 Controller。  
-4. **少造空架子** — 不为「看起来像平台」预先拆出用不到的进程和模块。  
-5. **密钥不进仓库** — 本地覆盖文件与环境变量承载密码和 API Key。
+1. **先跑通主路径，再谈拆分**  
+2. **用 Port 挡变化**（契约不是 HTTP 端口）  
+3. **HTTP 入口收敛** — 业务扩展走 Agent，不到处加 Controller  
+4. **少造空架子** — 不为「看起来像平台」预拆进程  
+5. **密钥不进仓库**
 
 ---
 
 ## 演进与维护
 
-- **会继续维护**：修复问题、跟进依赖与 Spring AI / 模型侧必要变更。  
-- **会继续扩展**：在模块化单体边界内增加 Agent、工具、检索、观测、MCP 等能力，而不是停在当前这一条演示路径。  
-- **更新渠道**：GitHub 仓库提交；系列说明同步到 [公众号](#相关链接) 与 [dream-saas.com](https://www.dream-saas.com/)。  
-- 建议通过 Issue / Discussion 反馈需求与缺陷，便于排进后续迭代。
+- 会继续修问题、跟进依赖与模型侧必要变更。  
+- 扩展仍守模块化单体边界；产品级 Admin / 多租户不在当前范围。  
+- 更新渠道：GitHub；说明同步公众号与 [dream-saas.com](https://www.dream-saas.com/)。
 
 ---
 
 ## 安全提示
 
-- 请勿将真实密码、API Key、内网地址提交到 Git。  
-- 使用 `application-local.yml` 或环境变量；模板见 `application-local.yml.example`、`.env.example`。  
-- `.idea/`、`.env`、`application-local.yml` 已写入 [`.gitignore`](.gitignore)。  
-- 若密钥曾出现在本地历史文件中，对外公开仓库前请先在云平台与数据库侧 **轮换**。
+- 勿提交真实密码、API Key、内网地址。  
+- 使用 `application-local.yml` 或环境变量；模板见 example / `.env.example`。  
+- 若密钥曾进历史，公开前请先轮换。
 
 ---
 
@@ -377,13 +353,13 @@ dream-ai/
 | | |
 |--|--|
 | 产品与演示 | [https://www.dream-saas.com/](https://www.dream-saas.com/) |
-| 微信公众号 | 扫下方二维码关注（Dream AI/SaaS），仓库更新与系列讲解会同步到公众号 |
+| 微信公众号 | 扫下方二维码关注（Dream AI/SaaS） |
 
 <p align="center">
   <img src="docs/assets/wechat-mp-qrcode.jpg" alt="微信公众号二维码" width="220" />
 </p>
 
-欢迎 Issue / Discussion 交流实现细节。
+欢迎 Issue / Discussion。
 
 ---
 
