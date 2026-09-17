@@ -130,6 +130,11 @@ public class AgentInvokeController {
                 }
 
                 @Override
+                public void onToolFailed(String toolName) {
+                    sendNamed(emitter, cancelled, "tool_failed", toolPayload("tool", toolName));
+                }
+
+                @Override
                 public boolean cancelled() {
                     return cancelled.get();
                 }

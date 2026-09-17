@@ -20,6 +20,7 @@ public record AgentInvokeHttpResponse(
         String model,
         List<String> blockedTools,
         List<String> executedTools,
+        List<String> failedTools,
         int retrieveHits,
         List<RetrieveHitSummary> retrieveHitSummaries) {
 
@@ -37,6 +38,7 @@ public record AgentInvokeHttpResponse(
                     "",
                     List.of(),
                     List.of(),
+                    List.of(),
                     0,
                     List.of());
         }
@@ -52,6 +54,7 @@ public record AgentInvokeHttpResponse(
                 observe.model(),
                 observe.blockedTools(),
                 observe.executedTools(),
+                observe.failedTools(),
                 hits.size(),
                 hits);
     }

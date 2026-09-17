@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 工具控制面：白名单 + HITL 模式。
+ * 工具控制面：白名单 + HITL 模式 + 执行失败重试。
  */
 @Configuration
 public class ToolPolicyConfig {
@@ -29,10 +29,11 @@ public class ToolPolicyConfig {
         ConfigurableToolPolicy policy =
                 new ConfigurableToolPolicy(props.getAllowlist(), props.getRequireApproval(), mode);
         log.info(
-                "ToolPolicy hitlMode={} allowlist={} requireApproval={}",
+                "ToolPolicy hitlMode={} allowlist={} requireApproval={} maxRetries={}",
                 policy.hitlMode(),
                 policy.allowlist(),
-                policy.requireApproval());
+                policy.requireApproval(),
+                props.getMaxRetries());
         return policy;
     }
 
@@ -52,6 +53,12 @@ public class ToolPolicyConfig {
 
         /** off | enforce | auto */
         private String hitlMode = "off";
+
+        /**
+         * 工具执行失败后的额外重试次数（总尝试 = 1 + maxRetries）。
+         * 策略拒执与未知工具不重试。默认 2。
+         */
+        private int maxRetries = 2;
 
         public List<String> getAllowlist() {
             return allowlist;
@@ -75,6 +82,14 @@ public class ToolPolicyConfig {
 
         public void setHitlMode(String hitlMode) {
             this.hitlMode = hitlMode;
+        }
+
+        public int getMaxRetries() {
+            return maxRetries;
+        }
+
+        public void setMaxRetries(int maxRetries) {
+            this.maxRetries = Math.max(0, maxRetries);
         }
     }
 }

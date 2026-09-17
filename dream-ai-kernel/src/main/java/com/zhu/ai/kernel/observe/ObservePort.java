@@ -30,6 +30,12 @@ public interface ObservePort {
     /** 记录被策略拦截的工具名（不计入 toolCalls / executedTools）。 */
     void markToolBlocked(String toolName);
 
+    /**
+     * 记录执行失败（重试耗尽）或未知工具名；不计入 toolCalls / executedTools。
+     * 默认空实现，旧 stub 不必改。
+     */
+    default void markToolFailed(String toolName) {}
+
     /** 记录本轮检索命中摘要（id/score/source）；无命中可不调。 */
     default void markRetrieveHits(List<RetrieveHitSummary> hits) {}
 

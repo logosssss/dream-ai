@@ -96,7 +96,9 @@ class DreamAiApplicationTest {
                 .andExpect(jsonPath("$.route").value(""))
                 .andExpect(jsonPath("$.model").value("qwen3.8-27b"))
                 .andExpect(jsonPath("$.blockedTools").isArray())
-                .andExpect(jsonPath("$.blockedTools.length()").value(0));
+                .andExpect(jsonPath("$.blockedTools.length()").value(0))
+                .andExpect(jsonPath("$.failedTools").isArray())
+                .andExpect(jsonPath("$.failedTools.length()").value(0));
         mockMvc.perform(get("/api/observe?limit=5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].sessionId").value("obs-http"))

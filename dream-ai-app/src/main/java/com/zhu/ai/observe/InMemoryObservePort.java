@@ -99,6 +99,17 @@ public final class InMemoryObservePort implements ObservePort {
     }
 
     @Override
+    public void markToolFailed(String toolName) {
+        if (toolName == null || toolName.isBlank()) {
+            return;
+        }
+        Pending pending = current.get();
+        if (pending != null) {
+            pending.failedTools.add(toolName.trim());
+        }
+    }
+
+    @Override
     public void markRetrieveHits(List<RetrieveHitSummary> hits) {
         Pending pending = current.get();
         if (pending == null || hits == null || hits.isEmpty()) {
@@ -133,6 +144,7 @@ public final class InMemoryObservePort implements ObservePort {
                 model == null ? "" : model,
                 List.copyOf(pending.blockedTools),
                 List.copyOf(pending.executedTools),
+                List.copyOf(pending.failedTools),
                 List.copyOf(pending.retrieveHits));
         ring.addFirst(observation);
         while (ring.size() > CAPACITY) {
@@ -170,6 +182,7 @@ public final class InMemoryObservePort implements ObservePort {
         private final AtomicReference<String> model = new AtomicReference<>("");
         private final Set<String> blockedTools = new LinkedHashSet<>();
         private final List<String> executedTools = new ArrayList<>();
+        private final Set<String> failedTools = new LinkedHashSet<>();
         private final List<RetrieveHitSummary> retrieveHits = new ArrayList<>();
 
         private Pending(String traceId, String sessionId, String agentId, long startNanos) {

@@ -11,6 +11,7 @@ import java.util.List;
  * @param model          本轮实际选用的聊天模型 id；未上报为空
  * @param blockedTools   本轮被策略拦截的工具名（白名单拒执 / HITL 未批）
  * @param executedTools  本轮真正执行成功的工具名（与 {@code toolCalls} 对应）
+ * @param failedTools    本轮执行失败（含重试耗尽）或未知工具名；不计 {@code toolCalls}
  * @param retrieveHits   本轮检索摘要（id/score/source，无正文）；与 prompt {@code [1]} 顺序一致
  */
 public record InvokeObservation(
@@ -26,6 +27,7 @@ public record InvokeObservation(
         String model,
         List<String> blockedTools,
         List<String> executedTools,
+        List<String> failedTools,
         List<RetrieveHitSummary> retrieveHits) {
 
     public InvokeObservation {
@@ -33,11 +35,12 @@ public record InvokeObservation(
         model = model == null ? "" : model;
         blockedTools = blockedTools == null ? List.of() : List.copyOf(blockedTools);
         executedTools = executedTools == null ? List.of() : List.copyOf(executedTools);
+        failedTools = failedTools == null ? List.of() : List.copyOf(failedTools);
         retrieveHits = retrieveHits == null ? List.of() : List.copyOf(retrieveHits);
         errorMessage = errorMessage == null ? "" : errorMessage;
     }
 
-    /** 无检索摘要时的便捷构造。 */
+    /** 无失败工具、无检索摘要时的便捷构造。 */
     public InvokeObservation(
             String traceId,
             String sessionId,
@@ -64,6 +67,39 @@ public record InvokeObservation(
                 model,
                 blockedTools,
                 executedTools,
+                List.of(),
                 List.of());
+    }
+
+    /** 无失败工具列表、带检索摘要时的便捷构造。 */
+    public InvokeObservation(
+            String traceId,
+            String sessionId,
+            String agentId,
+            long durationMs,
+            int modelCalls,
+            int toolCalls,
+            boolean success,
+            String errorMessage,
+            String route,
+            String model,
+            List<String> blockedTools,
+            List<String> executedTools,
+            List<RetrieveHitSummary> retrieveHits) {
+        this(
+                traceId,
+                sessionId,
+                agentId,
+                durationMs,
+                modelCalls,
+                toolCalls,
+                success,
+                errorMessage,
+                route,
+                model,
+                blockedTools,
+                executedTools,
+                List.of(),
+                retrieveHits);
     }
 }

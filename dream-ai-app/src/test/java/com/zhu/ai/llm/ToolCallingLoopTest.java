@@ -187,4 +187,128 @@ class ToolCallingLoopTest {
         assertEquals(List.of("current_date_time"), starts);
         assertEquals(List.of("current_date_time"), executed);
     }
+
+    @Test
+    void retriesExecutionFailureThenSucceeds() {
+        AtomicInteger steps = new AtomicInteger();
+        AtomicInteger toolRuns = new AtomicInteger();
+        InMemoryObservePort observe = new InMemoryObservePort();
+        observe.begin("s", "chat");
+        ToolCallingLoop loop = new ToolCallingLoop(
+                messages -> {
+                    if (steps.incrementAndGet() == 1) {
+                        return AssistantMessage.builder()
+                                .content("")
+                                .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                        "c1", "function", "flaky", "{}")))
+                                .build();
+                    }
+                    return new AssistantMessage("recovered");
+                },
+                (name, args) -> {
+                    if (toolRuns.incrementAndGet() < 3) {
+                        return ToolCallbackPort.ERROR_PREFIX + " boom";
+                    }
+                    return "ok";
+                },
+                observe,
+                null,
+                2);
+        assertEquals("recovered", loop.run(List.of(new UserMessage("x"))));
+        assertEquals(3, toolRuns.get());
+        var obs = observe.complete(true, null);
+        assertEquals(1, obs.toolCalls());
+        assertEquals(List.of("flaky"), obs.executedTools());
+        assertTrue(obs.failedTools().isEmpty());
+        assertTrue(obs.blockedTools().isEmpty());
+    }
+
+    @Test
+    void marksFailedAfterRetriesExhausted() {
+        AtomicInteger steps = new AtomicInteger();
+        AtomicInteger toolRuns = new AtomicInteger();
+        InMemoryObservePort observe = new InMemoryObservePort();
+        observe.begin("s", "chat");
+        List<String> failedEvents = new java.util.ArrayList<>();
+        TokenSink sink = new TokenSink() {
+            @Override
+            public void onDelta(String delta) {}
+
+            @Override
+            public void onToolFailed(String toolName) {
+                failedEvents.add(toolName);
+            }
+        };
+        ToolCallingLoop loop = new ToolCallingLoop(
+                messages -> {
+                    if (steps.incrementAndGet() == 1) {
+                        return AssistantMessage.builder()
+                                .content("")
+                                .toolCalls(List.of(new AssistantMessage.ToolCall(
+                                        "c1", "function", "broken", "{}")))
+                                .build();
+                    }
+                    boolean sawError = messages.stream()
+                            .filter(org.springframework.ai.chat.messages.ToolResponseMessage.class::isInstance)
+                            .map(org.springframework.ai.chat.messages.ToolResponseMessage.class::cast)
+                            .flatMap(m -> m.getResponses().stream())
+                            .anyMatch(r -> r.responseData().startsWith(ToolCallbackPort.ERROR_PREFIX));
+                    assertTrue(sawError);
+                    return new AssistantMessage("sorry");
+                },
+                (name, args) -> {
+                    toolRuns.incrementAndGet();
+                    return ToolCallbackPort.ERROR_PREFIX + " down";
+                },
+                observe,
+                sink,
+                2);
+        assertEquals("sorry", loop.run(List.of(new UserMessage("x"))));
+        assertEquals(3, toolRuns.get());
+        assertEquals(List.of("broken"), failedEvents);
+        var obs = observe.complete(true, null);
+        assertEquals(0, obs.toolCalls());
+        assertEquals(List.of("broken"), obs.failedTools());
+        assertTrue(obs.executedTools().isEmpty());
+    }
+
+    @Test
+    void doesNotRetryPolicyBlockOrUnknownTool() {
+        AtomicInteger steps = new AtomicInteger();
+        AtomicInteger toolRuns = new AtomicInteger();
+        InMemoryObservePort observe = new InMemoryObservePort();
+        observe.begin("s", "chat");
+        ToolCallingLoop loop = new ToolCallingLoop(
+                messages -> {
+                    int n = steps.incrementAndGet();
+                    if (n == 1) {
+                        return AssistantMessage.builder()
+                                .content("")
+                                .toolCalls(List.of(
+                                        new AssistantMessage.ToolCall(
+                                                "c1", "function", "web_search_prime", "{}"),
+                                        new AssistantMessage.ToolCall(
+                                                "c2", "function", "nope", "{}")))
+                                .build();
+                    }
+                    return new AssistantMessage("done");
+                },
+                (name, args) -> {
+                    toolRuns.incrementAndGet();
+                    if ("web_search_prime".equals(name)) {
+                        return GuardedToolPort.DENIED_PREFIX + " " + name;
+                    }
+                    return ToolCallbackPort.UNKNOWN_PREFIX + " " + name;
+                },
+                observe,
+                null,
+                5);
+        assertEquals("done", loop.run(List.of(new UserMessage("x"))));
+        assertEquals(2, toolRuns.get());
+        var obs = observe.complete(true, null);
+        assertEquals(0, obs.toolCalls());
+        assertEquals(List.of("web_search_prime"), obs.blockedTools());
+        assertEquals(List.of("nope"), obs.failedTools());
+        assertTrue(obs.executedTools().isEmpty());
+    }
 }

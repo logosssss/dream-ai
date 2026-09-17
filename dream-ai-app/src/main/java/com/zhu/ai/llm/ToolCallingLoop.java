@@ -32,9 +32,10 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
  * <b>与策略 / 观测 / SSE</b>：
  * <ul>
  *   <li>执行口是 {@link ToolPort}（通常已包 {@link GuardedToolPort}：白名单、HITL）</li>
- *   <li>策略拒执：返回串带 {@link GuardedToolPort#DENIED_PREFIX} → 记 {@code blockedTools}，
- *       <em>不</em>计入 {@code toolCalls} / {@code executedTools}</li>
- *   <li>真正执行：记 {@code executedTools}，并可选经 {@link TokenSink} 发 {@code tool_executed}</li>
+ *   <li>策略拒执：返回串带 {@link GuardedToolPort#DENIED_PREFIX} → 记 {@code blockedTools}，不重试</li>
+ *   <li>执行失败（{@link ToolCallbackPort#ERROR_PREFIX}）：最多再试 {@code maxRetries} 次；耗尽记 {@code failedTools}</li>
+ *   <li>未知工具：不重试，记 {@code failedTools}</li>
+ *   <li>真正成功：记 {@code executedTools}，SSE {@code tool_executed}</li>
  *   <li>每次模型步进都会 {@link ObservePort#markModelCall}</li>
  * </ul>
  * <p>
@@ -68,30 +69,40 @@ public final class ToolCallingLoop {
     private final ToolPort tools;
     private final ObservePort observe;
     private final TokenSink sink;
+    /** 执行失败后的额外重试次数；总尝试 = 1 + maxRetries。策略拒执 / 未知工具不重试。 */
+    private final int maxRetries;
 
-    /** 最小构造：无观测、无 SSE。单测与简单场景。 */
+    /** 最小构造：无观测、无 SSE、不重试。单测与简单场景。 */
     public ToolCallingLoop(ChatStepClient llm, ToolPort tools) {
-        this(llm, tools, null, null);
+        this(llm, tools, null, null, 0);
     }
 
     /** 同步 invoke：上报观测，不推 SSE 工具事件。 */
     public ToolCallingLoop(ChatStepClient llm, ToolPort tools, ObservePort observe) {
-        this(llm, tools, observe, null);
+        this(llm, tools, observe, null, 0);
+    }
+
+    /** 带观测与 SSE，默认不重试。 */
+    public ToolCallingLoop(ChatStepClient llm, ToolPort tools, ObservePort observe, TokenSink sink) {
+        this(llm, tools, observe, sink, 0);
     }
 
     /**
      * 完整构造。
      *
-     * @param llm     每步模型调用；不可为 null
-     * @param tools   工具执行契约（宜已做策略守卫）
-     * @param observe 可为 null（不计 model/tool 观测）
-     * @param sink    可为 null（不发 tool_* SSE）；流式工具阶段传入
+     * @param llm        每步模型调用；不可为 null
+     * @param tools      工具执行契约（宜已做策略守卫）
+     * @param observe    可为 null（不计 model/tool 观测）
+     * @param sink       可为 null（不发 tool_* SSE）；流式工具阶段传入
+     * @param maxRetries 执行失败额外重试次数（≥0）；策略拒执与未知工具忽略本值
      */
-    public ToolCallingLoop(ChatStepClient llm, ToolPort tools, ObservePort observe, TokenSink sink) {
+    public ToolCallingLoop(
+            ChatStepClient llm, ToolPort tools, ObservePort observe, TokenSink sink, int maxRetries) {
         this.llm = llm;
         this.tools = tools;
         this.observe = observe;
         this.sink = sink;
+        this.maxRetries = Math.max(0, maxRetries);
     }
 
     /**
@@ -139,10 +150,9 @@ public final class ToolCallingLoop {
     /**
      * 执行本轮全部 tool call，组装一条 {@link ToolResponseMessage} 喂回模型。
      * <p>
-     * 顺序：对每个 call 先 {@link TokenSink#onToolStart}，再 {@link ToolPort#execute}；
-     * 若结果为策略拒执 → 观测 blocked + SSE {@code tool_blocked}；
-     * 否则 → 观测 executed + SSE {@code tool_executed}。
-     * 拒执结果仍写入 ToolResponse，让模型看到「被拒绝」而不是静默丢弃。
+     * 顺序：对每个 call 先 {@link TokenSink#onToolStart}，再 {@link ToolPort#execute}（失败可重试）；
+     * 策略拒执 → blocked；执行/未知失败 → failed；成功 → executed。
+     * 结果仍写入 ToolResponse，让模型看到原因而不是静默丢弃。
      * <p>
      * 包内可见：流式适配器在收齐 tool call 后复用本方法，与同步路径语义一致。
      */
@@ -150,7 +160,20 @@ public final class ToolCallingLoop {
         List<ToolResponseMessage.ToolResponse> responses = new ArrayList<>(calls.size());
         for (AssistantMessage.ToolCall call : calls) {
             emitToolStart(call.name());
-            String output = tools.execute(call.name(), call.arguments());
+            String output = executeOne(call);
+            responses.add(new ToolResponseMessage.ToolResponse(call.id(), call.name(), output));
+        }
+        return ToolResponseMessage.builder().responses(responses).build();
+    }
+
+    /**
+     * 单次 tool call：策略拒执不重试；执行失败最多 1+maxRetries 次；未知工具一次即失败。
+     */
+    private String executeOne(AssistantMessage.ToolCall call) {
+        int maxAttempts = 1 + maxRetries;
+        String output = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            output = safeExecute(call);
             if (GuardedToolPort.isPolicyBlock(output)) {
                 log.info(
                         "tool blocked name={} id={} args={} result={}",
@@ -160,19 +183,62 @@ public final class ToolCallingLoop {
                         truncate(output));
                 markBlocked(call.name());
                 emitToolBlocked(call.name());
-            } else {
+                return output;
+            }
+            if (ToolCallbackPort.isUnknownTool(output)) {
                 log.info(
-                        "tool executed name={} id={} args={} result={}",
+                        "tool unknown name={} id={} args={} result={}",
                         call.name(),
                         call.id(),
                         truncate(call.arguments()),
                         truncate(output));
-                markExecuted(call.name());
-                emitToolExecuted(call.name());
+                markFailed(call.name());
+                emitToolFailed(call.name());
+                return output;
             }
-            responses.add(new ToolResponseMessage.ToolResponse(call.id(), call.name(), output));
+            if (ToolCallbackPort.isExecutionFailure(output)) {
+                if (attempt < maxAttempts) {
+                    log.warn(
+                            "tool error retry name={} attempt={}/{} result={}",
+                            call.name(),
+                            attempt,
+                            maxAttempts,
+                            truncate(output));
+                    continue;
+                }
+                log.warn(
+                        "tool failed name={} id={} attempts={} result={}",
+                        call.name(),
+                        call.id(),
+                        maxAttempts,
+                        truncate(output));
+                markFailed(call.name());
+                emitToolFailed(call.name());
+                return output;
+            }
+            log.info(
+                    "tool executed name={} id={} args={} result={}",
+                    call.name(),
+                    call.id(),
+                    truncate(call.arguments()),
+                    truncate(output));
+            markExecuted(call.name());
+            emitToolExecuted(call.name());
+            return output;
         }
-        return ToolResponseMessage.builder().responses(responses).build();
+        return output;
+    }
+
+    /** 委托 {@link ToolPort}；若实现抛 RuntimeException，收成 ERROR_PREFIX 串（可重试）。 */
+    private String safeExecute(AssistantMessage.ToolCall call) {
+        try {
+            return tools.execute(call.name(), call.arguments());
+        } catch (RuntimeException ex) {
+            String message = ex.getMessage();
+            return ToolCallbackPort.ERROR_PREFIX
+                    + " "
+                    + (message != null ? message : ex.getClass().getSimpleName());
+        }
     }
 
     /** 模型每步进一次 +1；无 {@link #observe} 则跳过。 */
@@ -193,6 +259,13 @@ public final class ToolCallingLoop {
     private void markBlocked(String toolName) {
         if (observe != null) {
             observe.markToolBlocked(toolName);
+        }
+    }
+
+    /** 执行失败 / 未知工具写入观测（不计执行次数）。 */
+    private void markFailed(String toolName) {
+        if (observe != null) {
+            observe.markToolFailed(toolName);
         }
     }
 
@@ -221,6 +294,13 @@ public final class ToolCallingLoop {
     private void emitToolExecuted(String toolName) {
         if (sink != null && toolName != null && !toolName.isBlank()) {
             sink.onToolExecuted(toolName);
+        }
+    }
+
+    /** SSE：工具失败，与观测 {@code failedTools} 对齐。 */
+    private void emitToolFailed(String toolName) {
+        if (sink != null && toolName != null && !toolName.isBlank()) {
+            sink.onToolFailed(toolName);
         }
     }
 

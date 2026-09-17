@@ -29,6 +29,9 @@ public interface TokenSink {
     /** 工具执行成功（与观测 {@code executedTools} 对齐）。 */
     default void onToolExecuted(String toolName) {}
 
+    /** 工具执行失败（重试耗尽或未知工具）；与观测 {@code failedTools} 对齐。 */
+    default void onToolFailed(String toolName) {}
+
     /**
      * 本轮检索摘要（与 prompt {@code [1]} 顺序一致）。Gateway 在进 Handler 前上报。
      */

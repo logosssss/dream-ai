@@ -116,6 +116,11 @@ public class GraphAgent implements AgentHandler {
             }
 
             @Override
+            public void onToolFailed(String toolName) {
+                sink.onToolFailed(toolName);
+            }
+
+            @Override
             public void onRetrieve(List<RetrieveHitSummary> hits) {
                 sink.onRetrieve(hits);
             }

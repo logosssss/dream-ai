@@ -38,6 +38,7 @@ public final class DashScopeChatAdapter implements ChatPort {
     private final Boolean multiModel;
     private final long streamTimeoutMs;
     private final String defaultModel;
+    private final int toolMaxRetries;
 
     public DashScopeChatAdapter(
             ChatModel chatModel,
@@ -45,7 +46,7 @@ public final class DashScopeChatAdapter implements ChatPort {
             ToolPort tools,
             ObservePort observe,
             Boolean multiModel) {
-        this(chatModel, toolCallbacks, tools, observe, multiModel, 120_000L, null);
+        this(chatModel, toolCallbacks, tools, observe, multiModel, 120_000L, null, 0);
     }
 
     public DashScopeChatAdapter(
@@ -55,7 +56,7 @@ public final class DashScopeChatAdapter implements ChatPort {
             ObservePort observe,
             Boolean multiModel,
             long streamTimeoutMs) {
-        this(chatModel, toolCallbacks, tools, observe, multiModel, streamTimeoutMs, null);
+        this(chatModel, toolCallbacks, tools, observe, multiModel, streamTimeoutMs, null, 0);
     }
 
     public DashScopeChatAdapter(
@@ -66,6 +67,18 @@ public final class DashScopeChatAdapter implements ChatPort {
             Boolean multiModel,
             long streamTimeoutMs,
             String defaultModel) {
+        this(chatModel, toolCallbacks, tools, observe, multiModel, streamTimeoutMs, defaultModel, 0);
+    }
+
+    public DashScopeChatAdapter(
+            ChatModel chatModel,
+            List<ToolCallback> toolCallbacks,
+            ToolPort tools,
+            ObservePort observe,
+            Boolean multiModel,
+            long streamTimeoutMs,
+            String defaultModel,
+            int toolMaxRetries) {
         this.chatModel = chatModel;
         this.toolCallbacks = List.copyOf(toolCallbacks);
         this.tools = tools;
@@ -73,14 +86,15 @@ public final class DashScopeChatAdapter implements ChatPort {
         this.multiModel = multiModel;
         this.streamTimeoutMs = streamTimeoutMs > 0 ? streamTimeoutMs : 120_000L;
         this.defaultModel = StringUtils.hasText(defaultModel) ? defaultModel.trim() : null;
+        this.toolMaxRetries = Math.max(0, toolMaxRetries);
     }
 
     @Override
     public String complete(ChatRequest request) {
         String model = resolveModel(request);
         markModel(model);
-        ToolCallingLoop loop =
-                new ToolCallingLoop(messages -> oneStep(messages, model), tools, observe);
+        ToolCallingLoop loop = new ToolCallingLoop(
+                messages -> oneStep(messages, model), tools, observe, null, toolMaxRetries);
         return loop.run(seedMessages(request));
     }
 
@@ -112,8 +126,10 @@ public final class DashScopeChatAdapter implements ChatPort {
                 return ToolCallingLoop.MAX_STEPS_MESSAGE;
             }
             messages.add(assistant);
-            // 与同步循环共用：blocked 不计 toolCalls，只有真正执行才记；SSE 可收 tool_* 事件
-            messages.add(new ToolCallingLoop(m -> null, tools, observe, sink).applyToolCalls(calls));
+            // 与同步循环共用：blocked/failed 不计 toolCalls；SSE 可收 tool_* 事件
+            messages.add(
+                    new ToolCallingLoop(m -> null, tools, observe, sink, toolMaxRetries)
+                            .applyToolCalls(calls));
         }
         return ToolCallingLoop.MAX_STEPS_MESSAGE;
     }

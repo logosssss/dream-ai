@@ -106,6 +106,8 @@ dream:
     require-approval: [web_search_prime]
     # off=忽略审批名单；enforce=未批拒执；auto=审批名单自动放行（演示/测试）
     hitl-mode: ${DREAM_TOOLS_HITL_MODE:enforce}
+    # 执行失败额外重试次数（总尝试=1+max-retries）；策略拒执/未知工具不重试
+    max-retries: ${DREAM_TOOLS_MAX_RETRIES:2}
   # 第 6 周 MCP Client：对接智谱 SSE（外部 Server），不自环本仓
   mcp:
     client:

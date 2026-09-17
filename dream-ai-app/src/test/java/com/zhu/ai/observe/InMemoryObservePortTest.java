@@ -26,11 +26,24 @@ class InMemoryObservePortTest {
         assertEquals("qwen-max", obs.model());
         assertEquals(List.of("web_search_prime"), obs.blockedTools());
         assertEquals(List.of("datetime_offset"), obs.executedTools());
+        assertTrue(obs.failedTools().isEmpty());
         assertEquals(1, obs.modelCalls());
         assertEquals(1, obs.toolCalls());
         assertEquals(1, obs.retrieveHits().size());
         assertEquals("kw-1", obs.retrieveHits().getFirst().id());
         assertTrue(obs.success());
         assertEquals(obs.traceId(), observe.recent(1).getFirst().traceId());
+    }
+
+    @Test
+    void recordsFailedToolsWithoutCountingToolCalls() {
+        InMemoryObservePort observe = new InMemoryObservePort();
+        observe.begin("s1", "chat");
+        observe.markToolFailed("web_search_prime");
+        observe.markToolFailed("web_search_prime");
+        var obs = observe.complete(true, null);
+        assertEquals(List.of("web_search_prime"), obs.failedTools());
+        assertEquals(0, obs.toolCalls());
+        assertTrue(obs.executedTools().isEmpty());
     }
 }

@@ -44,7 +44,8 @@ import org.slf4j.LoggerFactory;
  *     │
  *     ├─(chat)──────► chat 叶 ──────────► END
  *     │
- *     ├─(knowledge)─► knowledge 叶 ─────► END
+ *     ├─(knowledge)─► KnowledgeSubGraph ─► END
+ *     │                 gate → generate → cite | refuse
  *     │
  *     └─(review)────► review 叶 ────────► END
  * </pre>
@@ -53,6 +54,7 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>主图职责单一：只决定「走哪条业务线」</li>
  *   <li>叶节点可独立替换 / 单测 / 以后拆成子 {@code CompiledGraph}</li>
+ *   <li>knowledge 已先做成子图：门禁 / 生成 / 引用分节点，主图不膨胀</li>
  *   <li>加第四条路由时：加节点 + 改 {@link IntentRouter} + 改条件边 mappings，不必重写已有叶</li>
  * </ul>
  *
@@ -78,25 +80,17 @@ public final class SupervisorGraph implements GraphPort {
     /** 闲聊叶节点 id；条件边 mappings 的 value 指向这里。 */
     public static final String N_CHAT = "chat";
 
-    /** 知识问答叶节点 id；命中检索 / RAG 类关键词时走这里。 */
+    /** 知识问答：嵌入 {@link KnowledgeSubGraph}（CompiledGraph 子节点）。 */
     public static final String N_KNOWLEDGE = "knowledge";
 
     /** 评审叶节点 id；命中审查 / review 类关键词时走这里（优先级高于 knowledge）。 */
     public static final String N_REVIEW = "review";
 
-    /**
-     * knowledge 叶：无检索命中则短路拒答，不调模型——RAG 不是「检索了就算」。
-     */
-    public static final String NO_HIT_REPLY = "资料不足，无法根据知识库作答。";
+    /** @see KnowledgeSubGraph#NO_HIT_REPLY */
+    public static final String NO_HIT_REPLY = KnowledgeSubGraph.NO_HIT_REPLY;
 
-    /** 模型没写编号时补上，与 prompt {@code [1]} 对齐。 */
-    static final String CITATION_FALLBACK = "\n依据：[1]";
-
-    private static final String KNOWLEDGE_SYSTEM =
-            "你是知识问答助手，用简洁中文回答。\n"
-                    + "优先依据「参考资料」作答；参考资料为空或不够就明确说资料不足，不要编造。\n"
-                    + "回答中必须点名引用编号，例如 [1] 或 [2]。\n"
-                    + "不要把时效新闻、天气、股价当成仓库知识。\n";
+    /** @see KnowledgeSubGraph#CITATION_FALLBACK */
+    public static final String CITATION_FALLBACK = KnowledgeSubGraph.CITATION_FALLBACK;
 
     /**
      * review 叶专用 system：偏风险与改进点，和闲聊 / 知识问答语气区分开，
@@ -189,6 +183,7 @@ public final class SupervisorGraph implements GraphPort {
     /**
      * 组装 {@link StateGraph} 并 compile。
      * <p>
+     * knowledge 以 {@link CompiledGraph} 子图嵌入；chat / review 仍是主图叶节点（后续可同样拆子图）。
      * 无 sink：叶内 {@link ChatPort#complete}；有 sink：叶内 {@link ChatPort#stream}。
      */
     CompiledGraph compile(List<ConversationTurn> history, TokenSink sink) throws GraphStateException {
@@ -196,7 +191,7 @@ public final class SupervisorGraph implements GraphPort {
 
         g.addNode(N_INTENT, AsyncNodeAction.node_async(state -> intentRouter(state, sink)));
         g.addNode(N_CHAT, AsyncNodeAction.node_async(state -> chatLeaf(state, history, sink)));
-        g.addNode(N_KNOWLEDGE, AsyncNodeAction.node_async(state -> knowledgeLeaf(state, history, sink)));
+        g.addNode(N_KNOWLEDGE, KnowledgeSubGraph.compile(chatPort, models, observe, history, sink));
         g.addNode(N_REVIEW, AsyncNodeAction.node_async(state -> reviewLeaf(state, history, sink)));
 
         g.addEdge(START, N_INTENT);
@@ -234,27 +229,6 @@ public final class SupervisorGraph implements GraphPort {
         String output =
                 invokeLeaf(model, input, ChatAgent.systemPrompt(memory, retrieved), history, sink);
         return leafResult(model, output);
-    }
-
-    private Map<String, Object> knowledgeLeaf(
-            OverAllState state, List<ConversationTurn> history, TokenSink sink) {
-        String input = String.valueOf(state.value(SupervisorKeys.INPUT, ""));
-        String memory = String.valueOf(state.value(SupervisorKeys.MEMORY, ""));
-        String retrieved = String.valueOf(state.value(SupervisorKeys.RETRIEVED, ""));
-        if (retrieved.isBlank()) {
-            log.info("knowledge leaf refuse: no retrieve hits");
-            if (sink != null && !sink.cancelled()) {
-                sink.onDelta(NO_HIT_REPLY);
-            }
-            return leafResult("", NO_HIT_REPLY);
-        }
-        String model = resolveAndMark(ModelRouter.KNOWLEDGE);
-        String output = invokeLeaf(model, input, knowledgeSystem(memory, retrieved), history, sink);
-        String cited = ensureCitations(output, retrieved);
-        if (sink != null && !sink.cancelled() && cited.length() > (output == null ? 0 : output.length())) {
-            sink.onDelta(cited.substring(output == null ? 0 : output.length()));
-        }
-        return leafResult(model, cited);
     }
 
     private Map<String, Object> reviewLeaf(
@@ -298,31 +272,8 @@ public final class SupervisorGraph implements GraphPort {
         return model;
     }
 
-    static String ensureCitations(String output, String retrievedContext) {
-        String out = output == null ? "" : output;
-        if (retrievedContext == null || !retrievedContext.contains("[1]")) {
-            return out;
-        }
-        if (out.contains("[1]")) {
-            return out;
-        }
-        return out + CITATION_FALLBACK;
-    }
-
-    static String knowledgeSystem(String memoryNotes, String retrievedContext) {
-        StringBuilder system = new StringBuilder(KNOWLEDGE_SYSTEM);
-        appendMemoryAndRetrieved(system, memoryNotes, retrievedContext);
-        return system.toString();
-    }
-
     static String reviewSystem(String memoryNotes, String retrievedContext) {
         StringBuilder system = new StringBuilder(REVIEW_SYSTEM);
-        appendMemoryAndRetrieved(system, memoryNotes, retrievedContext);
-        return system.toString();
-    }
-
-    private static void appendMemoryAndRetrieved(
-            StringBuilder system, String memoryNotes, String retrievedContext) {
         if (memoryNotes != null && !memoryNotes.isBlank()) {
             system.append("\n长期记忆：\n").append(memoryNotes);
         }
@@ -331,6 +282,7 @@ public final class SupervisorGraph implements GraphPort {
         } else {
             system.append("\n参考资料：（空）\n");
         }
+        return system.toString();
     }
 
     private static KeyStrategyFactory keyFactory() {
@@ -343,6 +295,7 @@ public final class SupervisorGraph implements GraphPort {
             strategies.put(SupervisorKeys.ROUTE, replace);
             strategies.put(SupervisorKeys.OUTPUT, replace);
             strategies.put(SupervisorKeys.MODEL, replace);
+            strategies.put(SupervisorKeys.KNOWLEDGE_GATE, replace);
             return strategies;
         };
     }
